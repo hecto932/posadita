@@ -11,7 +11,9 @@ import {
   notifyAdminRecovery,
   notifyDrawResults,
   notifyInvitations,
+  notifyInviteCode,
   notifyLoginCode,
+  notifyNewLink,
   notifyOrganizer,
   notifyRegistered,
 } from '@/lib/notify';
@@ -125,14 +127,24 @@ async function clientIp() {
 const HONEYPOT = 'website';
 const isBot = (fd: FormData) => Boolean(String(fd.get(HONEYPOT) ?? '').trim());
 
-async function rememberParticipant(slug: string, accessToken: string) {
-  (await cookies()).set(sessionCookie(slug), accessToken, {
+/** Abre una sesión en este navegador. La cookie lleva un token de sesión (no el enlace personal). */
+async function rememberParticipant(slug: string, participantId: string) {
+  const session = await svc.createSession(participantId);
+  (await cookies()).set(sessionCookie(slug), session, {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 60 * 60 * 24 * 180,
+    maxAge: svc.SESSION_DAYS * DAY,
     path: '/',
   });
+}
+
+/** Cierra la sesión de este navegador (borra la cookie y la sesión en la BD). */
+async function forgetParticipant(slug: string) {
+  const jar = await cookies();
+  const session = jar.get(sessionCookie(slug))?.value;
+  if (session) await svc.deleteSession(session);
+  jar.delete(sessionCookie(slug));
 }
 
 // ───────── crear evento ─────────
@@ -155,7 +167,7 @@ export async function createEventAction(_: ActionState, fd: FormData): Promise<A
       organizerPhone: org.phone,
       organizerParticipates: fd.get('participates') === 'on',
     });
-    if (organizer) await rememberParticipant(event.slug, organizer.accessToken);
+    if (organizer) await rememberParticipant(event.slug, organizer.id);
     after(() => notifyOrganizer(event, organizer));
     adminToken = event.adminToken;
   } catch (err) {
@@ -168,12 +180,28 @@ export async function createEventAction(_: ActionState, fd: FormData): Promise<A
 
 const acceptFields = personFields.pick({ name: true, phone: true });
 
+/** Paso 1 de aceptar: valida nombre/WhatsApp y manda un código al correo invitado. */
+export async function requestInviteCodeAction(inviteToken: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    acceptFields.parse(Object.fromEntries(fd));
+    await svc.hitRateLimit(`code:ip:${await clientIp()}`, 10, HOUR);
+    const { invitation, event, code } = await svc.issueInviteCode(inviteToken);
+    if (!code) return ok(`Ya te mandamos un código a ${invitation.email} hace menos de un minuto. Usa ese (revisa también Spam).`);
+    after(() => notifyInviteCode(event, invitation, code));
+    return ok(`Te mandamos un código de 6 dígitos a ${invitation.email}. Revisa también Spam.`);
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
+}
+
+/** Paso 2 de aceptar: con el código del correo, entra al evento. */
 export async function acceptInvitationAction(inviteToken: string, _: ActionState, fd: FormData): Promise<ActionState> {
   let slug: string;
   try {
     const input = acceptFields.parse(Object.fromEntries(fd));
-    const { participant, event } = await svc.acceptInvitation(inviteToken, input);
-    await rememberParticipant(event.slug, participant.accessToken);
+    await svc.hitRateLimit(`verify:ip:${await clientIp()}`, 30, HOUR);
+    const { participant, event } = await svc.acceptInvitation(inviteToken, input, String(fd.get('code') ?? ''));
+    await rememberParticipant(event.slug, participant.id);
     after(() => notifyRegistered(event, participant));
     slug = event.slug;
   } catch (err) {
@@ -217,7 +245,7 @@ export async function verifyCodeAction(slug: string, _: ActionState, fd: FormDat
     const event = await svc.getEventBySlug(slug);
     if (!event) throw new svc.AppError('NOT_FOUND', 'El evento no existe');
     const participant = await svc.verifyLoginCode(event.id, mail, String(fd.get('code') ?? ''));
-    await rememberParticipant(slug, participant.accessToken);
+    await rememberParticipant(slug, participant.id);
   } catch (err) {
     return fail(errorMessage(err));
   }
@@ -225,7 +253,7 @@ export async function verifyCodeAction(slug: string, _: ActionState, fd: FormDat
 }
 
 export async function logoutAction(slug: string): Promise<ActionState> {
-  (await cookies()).delete(sessionCookie(slug));
+  await forgetParticipant(slug);
   redirect(`/e/${slug}`);
 }
 
@@ -310,12 +338,32 @@ export async function leaveEventAction(token: string): Promise<ActionState> {
     const { participant, event } = await participantOrThrow(token);
     const imgs = await svc.leaveEvent(participant.id);
     after(() => removeImages(imgs));
-    (await cookies()).delete(sessionCookie(event.slug));
+    (await cookies()).delete(sessionCookie(event.slug)); // la sesión se borró junto con el participante
     slug = event.slug;
   } catch (err) {
     return fail(errorMessage(err));
   }
   redirect(`/e/${slug}?salida=1`);
+}
+
+/**
+ * "Generar un enlace nuevo": el enlace personal anterior deja de servir y se
+ * cierran todas las sesiones. Este navegador queda dentro y el enlace nuevo
+ * solo se manda por correo (nunca se muestra a quien tenía el anterior).
+ */
+export async function rotateLinkAction(token: string): Promise<ActionState> {
+  let slug: string;
+  try {
+    const { participant, event } = await participantOrThrow(token);
+    await svc.hitRateLimit(`relink:p:${participant.id}`, 5, HOUR);
+    const fresh = await svc.rotateAccessToken(participant.id);
+    await rememberParticipant(event.slug, fresh.id);
+    after(() => notifyNewLink(event, fresh));
+    slug = event.slug;
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
+  redirect(`/e/${slug}?enlace=nuevo`);
 }
 
 // ───────── organizador ─────────
@@ -464,6 +512,20 @@ export async function removeParticipantAction(adminToken: string, participantId:
   }
   // El botón desaparece junto con la persona; el aviso viaja en la URL.
   redirect(`/admin/${adminToken}?aviso=${encodeURIComponent(notice)}`);
+}
+
+/** El organizador invalida el enlace personal de alguien (p. ej. si se filtró); el nuevo le llega por correo. */
+export async function resetParticipantLinkAction(adminToken: string, participantId: string): Promise<ActionState> {
+  try {
+    const e = await adminEventOrThrow(adminToken);
+    await svc.hitRateLimit(`relink:p:${participantId}`, 5, HOUR);
+    const fresh = await svc.rotateAccessToken(participantId, e.id);
+    after(() => notifyNewLink(e, fresh));
+    refresh();
+    return ok(`Listo: el enlace anterior ya no sirve y le mandamos uno nuevo a ${fresh.name} por correo.`);
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
 }
 
 export async function addExclusionAction(adminToken: string, _: ActionState, fd: FormData): Promise<ActionState> {

@@ -24,10 +24,16 @@ d('service (Postgres)', async () => {
     organizerParticipates: true,
   };
 
+  /** Acepta una invitación como lo hace la página: pide el código y lo escribe. */
+  async function accept(token: string, name: string) {
+    const { code } = await svc.issueInviteCode(token);
+    return svc.acceptInvitation(token, { name, phone: null }, code!);
+  }
+
   /** Invita y acepta: la única forma de entrar a un evento. */
   async function join(eventId: string, name: string, email: string) {
     const { invited } = await svc.inviteEmails(eventId, [email]);
-    return svc.acceptInvitation(invited[0].token, { name, phone: null });
+    return accept(invited[0].token, name);
   }
 
   beforeAll(async () => {
@@ -86,19 +92,22 @@ d('service (Postgres)', async () => {
     // Nadie es participante hasta aceptar.
     expect(await svc.countParticipants(event.id)).toBe(0);
 
-    const { participant } = await svc.acceptInvitation(uno.token, { name: 'Uno', phone: null });
+    const { participant } = await accept(uno.token, 'Uno');
     expect(participant.email).toBe('uno@i.com');
-    await expect(svc.acceptInvitation(uno.token, { name: 'Uno', phone: null })).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(svc.acceptInvitation(uno.token, { name: 'Uno', phone: null }, '123456')).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(svc.issueInviteCode(uno.token)).rejects.toMatchObject({ code: 'INVALID' });
 
     await svc.declineInvitation(dos.token);
     await expect(svc.declineInvitation(dos.token)).rejects.toMatchObject({ code: 'INVALID' });
 
     await svc.revokeInvitation(event.id, tres.id);
-    await expect(svc.acceptInvitation(tres.token, { name: 'Tres', phone: null })).rejects.toMatchObject({ code: 'INVALID' });
-    await expect(svc.acceptInvitation('no-existe', { name: 'x', phone: null })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(svc.issueInviteCode(tres.token)).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(svc.acceptInvitation(tres.token, { name: 'Tres', phone: null }, '123456')).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(svc.issueInviteCode('no-existe')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(svc.acceptInvitation('no-existe', { name: 'x', phone: null }, '123456')).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
     // Quien rechazó puede cambiar de opinión mientras siga abierto.
-    await svc.acceptInvitation(dos.token, { name: 'Dos', phone: null });
+    await accept(dos.token, 'Dos');
     expect(await svc.countParticipants(event.id)).toBe(2);
 
     // Re-invitar a alguien cancelado genera un enlace nuevo; el viejo ya no sirve.
@@ -125,14 +134,17 @@ d('service (Postgres)', async () => {
     });
     const { invited } = await svc.inviteEmails(event.id, ['a@x.com', 'b@x.com', 'c@x.com', 'd@x.com', 'e@x.com']);
     const tok = Object.fromEntries(invited.map((i) => [i.email, i.token]));
-    for (const m of ['a@x.com', 'b@x.com', 'c@x.com']) await svc.acceptInvitation(tok[m], { name: m, phone: null });
+    // d pidió su código antes de que se llenara el cupo
+    const dCode = (await svc.issueInviteCode(tok['d@x.com'])).code!;
+    for (const m of ['a@x.com', 'b@x.com', 'c@x.com']) await accept(tok[m], m);
 
     expect((await svc.getEventBySlug(event.slug))!.status).toBe('open');
-    await expect(svc.acceptInvitation(tok['d@x.com'], { name: 'd', phone: null })).rejects.toMatchObject({ code: 'FULL' });
+    await expect(svc.issueInviteCode(tok['d@x.com'])).rejects.toMatchObject({ code: 'FULL' });
+    await expect(svc.acceptInvitation(tok['d@x.com'], { name: 'd', phone: null }, dCode)).rejects.toMatchObject({ code: 'FULL' });
 
     await svc.updateEvent(event.id, { capacity: 10 });
     await db()`update events set signup_deadline = now() - interval '1 minute' where id = ${event.id}`;
-    await expect(svc.acceptInvitation(tok['e@x.com'], { name: 'e', phone: null })).rejects.toMatchObject({ code: 'DEADLINE' });
+    await expect(svc.issueInviteCode(tok['e@x.com'])).rejects.toMatchObject({ code: 'DEADLINE' });
     expect((await svc.getEventBySlug(event.slug))!.status).toBe('open');
     expect(await svc.listAssignments(event.id)).toHaveLength(0);
 
@@ -173,6 +185,91 @@ d('service (Postgres)', async () => {
     const third = (await svc.issueLoginCode(event.id, 'lupe@c.com'))!;
     await db()`update login_codes set expires_at = now() - interval '1 second' where event_id = ${event.id}`;
     await expect(svc.verifyLoginCode(event.id, 'lupe@c.com', third.code)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+  });
+
+  it('aceptar invitación exige el código que llega al correo invitado', async () => {
+    const { event } = await svc.createEvent({ ...base, name: 'Reenviada', organizerParticipates: false });
+    const { invited } = await svc.inviteEmails(event.id, ['real@r.com']);
+    const tok = invited[0].token;
+
+    // Sin código, o con uno inventado, no entra nadie (p. ej. con el correo reenviado).
+    await expect(svc.acceptInvitation(tok, { name: 'Intruso', phone: null }, '')).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    await expect(svc.acceptInvitation(tok, { name: 'Intruso', phone: null }, '123456')).rejects.toMatchObject({ code: 'CODE_INVALID' });
+
+    const first = await svc.issueInviteCode(tok);
+    expect(first.code).toMatch(/^\d{6}$/);
+    expect(first.invitation.email).toBe('real@r.com');
+    expect((await svc.issueInviteCode(tok)).code).toBeNull(); // espera 1 minuto entre códigos
+
+    // Un código de entrada (login) no sirve para aceptar: cada uno tiene su propósito.
+    await expect(svc.verifyLoginCode(event.id, 'real@r.com', first.code!)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+
+    // 5 intentos fallidos inutilizan el código
+    const bad = first.code === '000000' ? '111111' : '000000';
+    for (let i = 0; i < 5; i++)
+      await expect(svc.acceptInvitation(tok, { name: 'Intruso', phone: null }, bad)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    await expect(svc.acceptInvitation(tok, { name: 'Real', phone: null }, first.code!)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    expect(await svc.countParticipants(event.id)).toBe(0);
+
+    await db()`delete from login_codes where event_id = ${event.id}`;
+    const { participant } = await accept(tok, 'Real');
+    expect(participant.email).toBe('real@r.com');
+  });
+
+  it('sesiones y enlace personal nuevo', async () => {
+    const { event } = await svc.createEvent({ ...base, name: 'Sesiones', organizerParticipates: false });
+    const { participant } = await join(event.id, 'Sol', 'sol@s.com');
+
+    const s1 = await svc.createSession(participant.id);
+    const s2 = await svc.createSession(participant.id);
+    expect(s1).not.toBe(participant.accessToken);
+    expect((await svc.getParticipantBySession(s1))?.participant.id).toBe(participant.id);
+    // La BD solo guarda el hash
+    expect(await db()`select 1 from sessions where token_hash = ${s1}`).toHaveLength(0);
+    // El enlace personal no sirve como sesión ni viceversa
+    expect(await svc.getParticipantBySession(participant.accessToken)).toBeNull();
+    expect(await svc.getParticipantByToken(s1)).toBeNull();
+
+    await svc.deleteSession(s1);
+    expect(await svc.getParticipantBySession(s1)).toBeNull();
+    expect(await svc.getParticipantBySession(s2)).not.toBeNull();
+
+    // Sesión vencida
+    const s3 = await svc.createSession(participant.id);
+    await db()`update sessions set expires_at = now() - interval '1 second' where participant_id = ${participant.id} and created_at = (select max(created_at) from sessions where participant_id = ${participant.id})`;
+    expect(await svc.getParticipantBySession(s3)).toBeNull();
+
+    // Enlace nuevo: el anterior deja de servir y se cierran todas las sesiones.
+    const other = await svc.createEvent({ ...base, name: 'Otro evento', organizerParticipates: false });
+    await expect(svc.rotateAccessToken(participant.id, other.event.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const fresh = await svc.rotateAccessToken(participant.id, event.id);
+    expect(fresh.accessToken).not.toBe(participant.accessToken);
+    expect(await svc.getParticipantByToken(participant.accessToken)).toBeNull();
+    expect((await svc.getParticipantByToken(fresh.accessToken))?.participant.id).toBe(participant.id);
+    expect(await svc.getParticipantBySession(s2)).toBeNull();
+  });
+
+  it('cada quien solo ve la lista de quien le tocó', async () => {
+    const { event } = await svc.createEvent({ ...base, name: 'Secreto', organizerParticipates: false });
+    const people = [];
+    for (const n of ['p1', 'p2', 'p3', 'p4']) people.push((await join(event.id, n, `${n}@s.com`)).participant);
+    for (const p of people) await svc.addItem(p.id, { title: `regalo de ${p.name}`, note: null, url: null, estPriceMxn: null, imagePath: null });
+
+    // Antes del sorteo nadie tiene a quién verle la lista.
+    for (const p of people) expect(await svc.getReceiverFor(p.id)).toBeNull();
+
+    for (const round of [() => svc.performDraw(event.id), () => svc.redraw(event.id)]) {
+      expect(await round()).toMatchObject({ drawn: true });
+      const receivers = new Set<string>();
+      for (const p of people) {
+        const r = (await svc.getReceiverFor(p.id))!;
+        expect(r.id).not.toBe(p.id);
+        receivers.add(r.id);
+        const items = await svc.listItems(r.id);
+        expect(items.map((i) => i.title)).toEqual([`regalo de ${r.name}`]);
+      }
+      expect(receivers.size).toBe(people.length); // a cada quien le toca alguien distinto
+    }
   });
 
   it('quitar a alguien después del sorteo re-sortea sin romper el ciclo', async () => {

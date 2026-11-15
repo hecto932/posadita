@@ -40,8 +40,19 @@ export async function removeImages(paths: Array<string | null | undefined>) {
   if (error) console.error('[storage] no se pudieron borrar imágenes', error.message);
 }
 
-/** El bucket es público; las rutas llevan UUID, así que no se pueden adivinar. */
-export function imageUrl(path: string | null): string | null {
-  if (!path || !process.env.SUPABASE_URL) return null;
-  return `${process.env.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/${STORAGE_BUCKET}/${path}`;
+/** Las fotos solo se ven con enlaces firmados que caducan; el bucket es privado. */
+export const SIGNED_URL_SECONDS = 60 * 60;
+
+/** Enlaces firmados para varias imágenes en una sola llamada: ruta → URL. */
+export async function signedImageUrls(paths: Array<string | null | undefined>): Promise<Map<string, string>> {
+  const clean = [...new Set(paths.filter((p): p is string => Boolean(p)))];
+  const urls = new Map<string, string>();
+  if (!clean.length || !storageEnabled()) return urls;
+  const { data, error } = await supabase().storage.from(STORAGE_BUCKET).createSignedUrls(clean, SIGNED_URL_SECONDS);
+  if (error) {
+    console.error('[storage] no se pudieron firmar imágenes', error.message);
+    return urls;
+  }
+  for (const r of data) if (r.path && r.signedUrl) urls.set(r.path, r.signedUrl);
+  return urls;
 }

@@ -10,6 +10,7 @@ import {
   redrawAction,
   removeExclusionAction,
   removeParticipantAction,
+  resetParticipantLinkAction,
   reopenAction,
   resendDrawEmailsAction,
   resendInvitationAction,
@@ -206,14 +207,21 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
                     {p.phone ? ` · ${p.phone}` : ''} · {p.itemCount} {p.itemCount === 1 ? 'deseo' : 'deseos'}
                   </p>
                 </div>
-                {!p.isOrganizer && (
-                  <div className="flex flex-wrap gap-2">
-                    {drawn && p.phone && (
-                      <a href={waTo(p.phone, personalNudge(p.name))} target="_blank" rel="noopener noreferrer" className="btn-ghost text-whatsapp-enlace">
-                        <WhatsAppIcon />
-                        WhatsApp
-                      </a>
-                    )}
+                <div className="flex flex-wrap gap-2">
+                  <ActionButton
+                    action={resetParticipantLinkAction.bind(null, token, p.id)}
+                    className="btn-ghost"
+                    confirm={`El enlace personal de ${p.name} dejará de servir y le mandaremos uno nuevo por correo. Úsalo si su enlace se filtró. ¿Continuar?`}
+                  >
+                    Nuevo enlace
+                  </ActionButton>
+                  {!p.isOrganizer && drawn && p.phone && (
+                    <a href={waTo(p.phone, personalNudge(p.name))} target="_blank" rel="noopener noreferrer" className="btn-ghost text-whatsapp-enlace">
+                      <WhatsAppIcon />
+                      WhatsApp
+                    </a>
+                  )}
+                  {!p.isOrganizer && (
                     <ActionButton
                       action={removeParticipantAction.bind(null, token, p.id)}
                       className="btn-ghost text-peligro"
@@ -225,8 +233,8 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
                     >
                       Quitar
                     </ActionButton>
-                  </div>
-                )}
+                  )}
+                </div>
               </li>
             ))}
           </ul>

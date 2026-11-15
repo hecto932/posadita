@@ -9,7 +9,7 @@ import { ParticipantView } from '@/components/ParticipantView';
 import { sessionCookie } from '@/lib/config';
 import * as svc from '@/lib/service';
 
-export const metadata: Metadata = { title: 'Intercambio' };
+export const metadata: Metadata = { title: 'Intercambio', robots: { index: false, follow: false } };
 
 export default function EventPage({ params, searchParams }: PageProps<'/e/[slug]'>) {
   return (
@@ -25,13 +25,23 @@ async function EventContent({ params, searchParams }: Pick<PageProps<'/e/[slug]'
   if (!event) notFound();
 
   // ¿Ya entró con su correo (o aceptó la invitación) en este navegador?
-  const cookieToken = (await cookies()).get(sessionCookie(slug))?.value;
-  const me = cookieToken ? await svc.getParticipantByToken(cookieToken) : null;
+  const session = (await cookies()).get(sessionCookie(slug))?.value;
+  const me = session ? await svc.getParticipantBySession(session) : null;
   if (me && me.event.id === event.id) {
-    return <ParticipantView participant={me.participant} event={me.event} token={me.participant.accessToken} welcome={!!sp.bienvenida} onEventPage />;
+    return (
+      <ParticipantView
+        participant={me.participant}
+        event={me.event}
+        token={me.participant.accessToken}
+        welcome={!!sp.bienvenida}
+        newLink={sp.enlace === 'nuevo'}
+        onEventPage
+      />
+    );
   }
 
-  const names = await svc.listParticipantNames(event.id);
+  // Sin sesión solo mostramos cuántos van: los nombres son para quienes ya están dentro.
+  const count = await svc.countParticipants(event.id);
 
   return (
     <div className="space-y-6">
@@ -67,21 +77,13 @@ async function EventContent({ params, searchParams }: Pick<PageProps<'/e/[slug]'
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="card-title">Quiénes van</h2>
           <span className="chip">
-            {names.length}
-            {event.capacity ? ` de ${event.capacity}` : ''} {names.length === 1 ? 'persona' : 'personas'}
+            {count}
+            {event.capacity ? ` de ${event.capacity}` : ''} {count === 1 ? 'persona' : 'personas'}
           </span>
         </div>
-        {names.length ? (
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {names.map((n, i) => (
-              <li key={i} className="chip">
-                {n}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-cafe">Todavía nadie ha aceptado su invitación.</p>
-        )}
+        <p className="mt-2 text-cafe">
+          {count ? 'Entra con tu correo para ver quiénes ya confirmaron.' : 'Todavía nadie ha aceptado su invitación.'}
+        </p>
       </section>
     </div>
   );

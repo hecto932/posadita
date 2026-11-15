@@ -2,9 +2,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
-import { acceptInvitationAction, declineInvitationAction } from '@/app/actions';
+import { acceptInvitationAction, declineInvitationAction, requestInviteCodeAction } from '@/app/actions';
 import { EventFacts, Skeleton } from '@/components/EventBits';
-import { ActionButton, ActionForm, SubmitButton } from '@/components/forms';
+import { ActionButton } from '@/components/forms';
+import { InviteAccept } from '@/components/InviteAccept';
 import * as svc from '@/lib/service';
 
 export const metadata: Metadata = { title: 'Tu invitación', robots: { index: false, follow: false } };
@@ -75,25 +76,11 @@ async function InvitationContent({ params }: Pick<PageProps<'/i/[token]'>, 'para
                 : 'Al aceptar entras al grupo, armas tu lista de deseos y participas cuando el organizador haga el sorteo.'}
             </p>
           </div>
-          <ActionForm action={acceptInvitationAction.bind(null, token)} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="label" htmlFor="name">
-                  Tu nombre
-                </label>
-                <input id="name" name="name" required maxLength={80} className="input" placeholder="Como te conocen en la familia 🙂" autoComplete="name" />
-              </div>
-              <div>
-                <label className="label" htmlFor="phone">
-                  WhatsApp <span className="opcional">(opcional)</span>
-                </label>
-                <input id="phone" name="phone" type="tel" inputMode="tel" className="input" placeholder="662 123 4567" autoComplete="tel" />
-              </div>
-            </div>
-            <SubmitButton pendingText="Aceptando…" className="btn-primary btn-lg w-full">
-              Aceptar invitación 🎁
-            </SubmitButton>
-          </ActionForm>
+          <InviteAccept
+            email={invitation.email}
+            requestCode={requestInviteCodeAction.bind(null, token)}
+            accept={acceptInvitationAction.bind(null, token)}
+          />
           {invitation.status === 'pending' && (
             <div className="border-t border-linea pt-4 text-center">
               <ActionButton action={declineInvitationAction.bind(null, token)} className="btn-ghost text-peligro" confirm="¿Seguro que no vas a participar?" pendingText="…">

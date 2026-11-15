@@ -105,13 +105,26 @@ create table if not exists login_codes (
   created_at  timestamptz not null default now()
 );
 create index if not exists login_codes_lookup_idx on login_codes(event_id, email, created_at desc);
+-- 'login' = entrar al evento; 'invite' = confirmar el correo al aceptar una invitación.
+alter table login_codes add column if not exists purpose text not null default 'login' check (purpose in ('login', 'invite'));
+
+-- Sesiones del navegador (cookie). Solo se guarda el hash del token; caducan y
+-- se borran al cerrar sesión o al generar un enlace personal nuevo.
+create table if not exists sessions (
+  id              uuid primary key default gen_random_uuid(),
+  participant_id  uuid not null references participants(id) on delete cascade,
+  token_hash      text not null unique,
+  created_at      timestamptz not null default now(),
+  expires_at      timestamptz not null
+);
+create index if not exists sessions_participant_idx on sessions(participant_id);
 
 create table if not exists notifications (
   id              bigint generated always as identity primary key,
   event_id        uuid not null references events(id) on delete cascade,
   participant_id  uuid references participants(id) on delete set null,
   channel         text not null default 'email',
-  kind            text not null,           -- registered | organizer | draw | reminder | invitation | login_code
+  kind            text not null,           -- registered | organizer | draw | reminder | invitation | login_code | invite_code | new_link
   status          text not null,           -- sent | failed | logged
   error           text,
   created_at      timestamptz not null default now()
@@ -130,3 +143,4 @@ alter table notifications   enable row level security;
 alter table invitations     enable row level security;
 alter table login_codes     enable row level security;
 alter table rate_limits     enable row level security;
+alter table sessions        enable row level security;

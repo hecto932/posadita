@@ -16,9 +16,12 @@ const nextConfig: NextConfig = {
           // como Referer a las tiendas de la lista de deseos.
           { key: 'Referrer-Policy', value: 'no-referrer' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
+          // Nadie puede meter la app en un iframe ajeno (clickjacking).
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
         ],
       },
-      { source: '/(p|i|admin)/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] },
+      { source: '/(p|i|e|admin)/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] },
     ];
   },
   turbopack: {

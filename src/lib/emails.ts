@@ -103,6 +103,30 @@ export function loginCodeEmail(e: EventRow, p: Participant, code: string, minute
   });
 }
 
+/** Código para confirmar el correo al aceptar una invitación. */
+export function inviteCodeEmail(e: EventRow, inv: Invitation, code: string, minutes: number): Mail {
+  return render(inv.email, `${code} es tu código para entrar a "${e.name}"`, {
+    heading: `Tu código para aceptar: ${code}`,
+    lines: [
+      `Escribe este código en la página de la invitación a <b>${h(e.name)}</b> para entrar. Vale ${minutes} minutos.`,
+      `<span style="font-size:32px;font-weight:bold;letter-spacing:6px">${code}</span>`,
+    ],
+    footer: 'Si tú no lo pediste, ignora este correo: sin este código nadie puede aceptar tu invitación.',
+  });
+}
+
+/** Enlace personal nuevo (el anterior ya no sirve). */
+export function newLinkEmail(e: EventRow, p: Participant): Mail {
+  return render(p.email, `Tu nuevo enlace para "${e.name}"`, {
+    heading: `${p.name}, este es tu nuevo enlace personal`,
+    lines: [
+      'Se generó un enlace nuevo para tu página en el intercambio. El anterior ya no funciona y se cerró la sesión en todos los dispositivos.',
+      'También puedes entrar siempre desde la página del evento con tu correo y un código.',
+    ],
+    cta: { label: 'Abrir mi página', url: personalUrl(p) },
+  });
+}
+
 /** "¿Perdiste tu panel?": un solo correo con los paneles de los eventos de ese organizador. */
 export function adminRecoveryEmail(to: string, events: EventRow[]): Mail {
   const many = events.length > 1;

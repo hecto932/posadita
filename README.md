@@ -19,16 +19,20 @@ Amigo secreto para posadas e intercambios: **invitaciones por correo**, **un enl
 |---|---|---|
 | `/` | Organizador | Crea el evento (monto, fecha, lugar, cupo, fecha límite). Por defecto también participa. |
 | `/admin/[token]` | Organizador | Invita por correo, ve quién aceptó/rechazó, exclusiones, **decide cuándo sortear**, avisa por WhatsApp. **No ve asignaciones.** |
-| `/i/[token]` | Invitado | Su invitación: **Aceptar** (pone nombre y WhatsApp) o **Rechazar**. Solo quien acepta entra al evento. |
-| `/e/[slug]` | Participantes | Enlace del evento: entras con **tu correo + un código de 6 dígitos** y ahí mismo ves tu lista y, tras el sorteo, a quién te tocó. |
-| `/p/[token]` | Cada participante | Acceso directo (desde los correos) a la misma vista. |
+| `/i/[token]` | Invitado | Su invitación: **Aceptar** (pone nombre y WhatsApp y confirma con un **código que llega al correo invitado**) o **Rechazar**. Solo quien acepta entra al evento. |
+| `/e/[slug]` | Participantes | Enlace del evento: entras con **tu correo + un código de 6 dígitos** y ahí mismo ves tu lista, quiénes van y, tras el sorteo, a quién te tocó. Sin sesión solo se ve cuántas personas van, no sus nombres. |
+| `/p/[token]` | Cada participante | Acceso directo (desde los correos) a la misma vista. Se puede **generar uno nuevo** (el anterior deja de servir y se cierran todas las sesiones); el organizador también puede regenerarlo, y el nuevo solo llega por correo. |
 | `/api/cron/daily` | Vercel | Recordatorio 3 días antes, limpia códigos y límites viejos, mantiene viva la BD. |
 
 **Invitaciones:** solo por invitación; nadie se registra solo. El cupo y la fecha límite únicamente impiden aceptar más invitaciones.
 
 **El sorteo** solo ocurre cuando el organizador aprieta el botón (nunca automático). Es un **ciclo único** aleatorio (`crypto.randomInt` + Fisher–Yates): cada quien le regala a exactamente una persona y recibe de exactamente una, nadie se toca a sí mismo. Respeta exclusiones y corre en una transacción con `SELECT … FOR UPDATE` (a prueba de doble clic).
 
-**Código de acceso:** 6 dígitos, vale 10 minutos, máximo 5 intentos, uno nuevo cada 60 s y máximo 8 al día por correo; solo se guarda su hash. La respuesta es la misma exista o no el correo.
+**Código de acceso:** 6 dígitos, vale 10 minutos, máximo 5 intentos, uno nuevo cada 60 s y máximo 8 al día por correo; solo se guarda su hash. La respuesta es la misma exista o no el correo. El mismo mecanismo (con propósito `invite`) confirma el correo al aceptar una invitación, así un correo reenviado no basta para entrar.
+
+**Sesiones:** la cookie lleva un token de sesión propio (no el enlace personal), dura 60 días y en la BD solo se guarda su hash (`sessions`). "Cerrar sesión" la borra.
+
+**Fotos de la lista:** el bucket `wishlist` es **privado**; las imágenes se muestran con enlaces firmados que caducan en 1 h, y solo se firman las de tu lista y la de quien te tocó.
 
 **Anti-abuso (cuida la cuota de Gmail):** límites por ventana guardados en Postgres (`rate_limits`, se limpia en el cron): crear evento 5/h por IP y 5/día por correo del organizador; invitaciones 100 correos/h por evento y máximo 200 por evento; reenviar una invitación cada 10 min; pedir código 10/h por IP; validar código 30/h por IP; recuperar panel 5/h por IP y 3/h por correo. El formulario de crear evento tiene un campo trampa para bots.
 

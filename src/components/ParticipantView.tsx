@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { addItemAction, deleteItemAction, leaveEventAction, logoutAction, updateItemAction } from '@/app/actions';
+import { addItemAction, deleteItemAction, leaveEventAction, logoutAction, rotateLinkAction, updateItemAction } from '@/app/actions';
 import { EventFacts } from '@/components/EventBits';
 import { ActionButton, CopyButton } from '@/components/forms';
 import { WhatsAppIcon } from '@/components/icons';
@@ -9,16 +9,16 @@ import { WishItemForm } from '@/components/WishItemForm';
 import { appUrl } from '@/lib/config';
 import { formatMXN } from '@/lib/format';
 import * as svc from '@/lib/service';
-import { imageUrl } from '@/lib/storage';
-import { waShare, waTo } from '@/lib/whatsapp';
+import { signedImageUrls } from '@/lib/storage';
+import { waTo } from '@/lib/whatsapp';
 
-const view = (i: svc.WishItem) => ({
+const view = (i: svc.WishItem, images: Map<string, string>) => ({
   id: i.id,
   title: i.title,
   note: i.note,
   url: i.url,
   estPriceMxn: i.estPriceMxn,
-  imageUrl: imageUrl(i.imagePath),
+  imageUrl: i.imagePath ? (images.get(i.imagePath) ?? null) : null,
 });
 
 /**
@@ -31,20 +31,25 @@ export async function ParticipantView({
   event,
   token,
   welcome = false,
+  newLink = false,
   onEventPage = false,
 }: {
   participant: svc.Participant;
   event: svc.EventRow;
   token: string;
   welcome?: boolean;
+  newLink?: boolean;
   onEventPage?: boolean;
 }) {
-  const [myItems, receiver, count] = await Promise.all([
+  const [myItems, receiver, names] = await Promise.all([
     svc.listItems(participant.id),
     event.status === 'drawn' ? svc.getReceiverFor(participant.id) : null,
-    svc.countParticipants(event.id),
+    svc.listParticipantNames(event.id),
   ]);
+  const count = names.length;
+  // Solo la lista de quien te tocó: nunca se cargan regalos de nadie más.
   const receiverItems = receiver ? await svc.listItems(receiver.id) : [];
+  const images = await signedImageUrls([...myItems, ...receiverItems].map((i) => i.imagePath));
 
   const myUrl = appUrl(`/p/${token}`);
   const canLeave = event.status === 'open' && !participant.isOrganizer;
@@ -52,18 +57,29 @@ export async function ParticipantView({
 
   return (
     <div className="space-y-8">
+      {newLink && (
+        <p role="status" className="aviso-info">
+          <span aria-hidden className="aviso-icono">
+            i
+          </span>
+          <span>Listo: tu enlace anterior ya no sirve y se cerraron tus otras sesiones. Te mandamos el nuevo por correo.</span>
+        </p>
+      )}
+
       {welcome && (
         <section className="rounded-3xl border-2 border-verde-texto bg-verde-suave p-6">
           <h2 className="text-xl font-bold text-verde-texto">¡Ya estás dentro, {participant.name}! 🎉</h2>
           <p className="mt-1">
-            Cuando quieras volver, entra a la página del evento con tu correo. También te mandamos tu enlace personal por correo y puedes guardarlo en tu
-            WhatsApp:
+            Cuando quieras volver, entra a la página del evento con tu correo. También te mandamos tu enlace personal por correo
+            {participant.phone ? ' y puedes guardarlo en tu WhatsApp' : ''}:
           </p>
           <div className="acciones mt-4">
-            <a href={participant.phone ? waTo(participant.phone, selfMsg) : waShare(selfMsg)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp">
-              <WhatsAppIcon />
-              Mandármelo por WhatsApp
-            </a>
+            {participant.phone && (
+              <a href={waTo(participant.phone, selfMsg)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp">
+                <WhatsAppIcon />
+                Mandármelo por WhatsApp
+              </a>
+            )}
             <CopyButton text={myUrl} label="Copiar mi enlace" />
           </div>
         </section>
@@ -93,7 +109,7 @@ export async function ParticipantView({
           {receiverItems.length ? (
             <div className="space-y-3">
               {receiverItems.map((i) => (
-                <WishCard key={i.id} item={view(i)} maxAmount={event.maxAmountMxn} />
+                <WishCard key={i.id} item={view(i, images)} maxAmount={event.maxAmountMxn} />
               ))}
             </div>
           ) : (
@@ -122,7 +138,7 @@ export async function ParticipantView({
             {myItems.map((i) => (
               <MyItem
                 key={i.id}
-                item={view(i)}
+                item={view(i, images)}
                 maxAmount={event.maxAmountMxn}
                 updateAction={updateItemAction.bind(null, token, i.id)}
                 deleteAction={deleteItemAction.bind(null, token, i.id)}
@@ -136,17 +152,48 @@ export async function ParticipantView({
         </div>
       </section>
 
+      <section className="card">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="card-title">Quiénes van</h2>
+          <span className="chip">
+            {count}
+            {event.capacity ? ` de ${event.capacity}` : ''} {count === 1 ? 'persona' : 'personas'}
+          </span>
+        </div>
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {names.map((n, i) => (
+            <li key={i} className="chip">
+              {n}
+            </li>
+          ))}
+        </ul>
+      </section>
+
       <section className="card space-y-4">
         <div>
           <h2 className="text-xl font-bold">Tu enlace personal</h2>
-          <p className="mt-1 text-cafe">Guárdalo para volver a entrar sin código. No lo compartas.</p>
+          <p className="mt-1 text-cafe">
+            Guárdalo para volver a entrar sin código. No lo compartas: quien lo tenga puede ver a quién te tocó y su lista.
+          </p>
         </div>
         <div className="acciones">
-          <a href={participant.phone ? waTo(participant.phone, selfMsg) : waShare(selfMsg)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp">
-            <WhatsAppIcon />
-            Guardar en WhatsApp
-          </a>
+          {participant.phone && (
+            <a href={waTo(participant.phone, selfMsg)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp">
+              <WhatsAppIcon />
+              Guardar en mi WhatsApp
+            </a>
+          )}
           <CopyButton text={myUrl} label="Copiar enlace" />
+        </div>
+        <div className="border-t border-linea pt-4">
+          <p className="text-sm text-cafe">¿Lo compartiste por error? Genera uno nuevo: el anterior deja de servir y te mandamos el nuevo por correo.</p>
+          <ActionButton
+            action={rotateLinkAction.bind(null, token)}
+            className="btn-ghost mt-2"
+            confirm="Tu enlace actual dejará de servir y se cerrará la sesión en tus otros dispositivos. ¿Continuar?"
+          >
+            Generar un enlace nuevo
+          </ActionButton>
         </div>
       </section>
 

@@ -204,6 +204,10 @@ export async function getParticipantByToken(token: string) {
     select p.*, to_jsonb(e.*) as event
     from participants p join events e on e.id = p.event_id
     where p.access_token = ${token}`;
+  return withEvent(row);
+}
+
+function withEvent(row: (Participant & { event: EventRow }) | undefined) {
   if (!row) return null;
   const { event, ...participant } = row;
   return { participant: participant as Participant, event: reviveEvent(event) };
@@ -317,15 +321,45 @@ export async function getInvitationByToken(token: string) {
 
 export type Acceptance = { name: string; phone: string | null };
 
-/** Acepta la invitación: crea al participante con el correo invitado. Nunca sortea. */
-export async function acceptInvitation(token: string, input: Acceptance) {
+function assertInvitationOpen(inv: Invitation) {
+  if (inv.status === 'accepted') throw new AppError('INVALID', 'Ya aceptaste esta invitación.');
+  if (inv.status === 'revoked') throw new AppError('INVALID', 'El organizador canceló esta invitación.');
+}
+
+/**
+ * Manda (genera) el código para confirmar que quien acepta controla el correo
+ * invitado: el enlace de la invitación solo no basta, porque se puede reenviar.
+ * `code` es null si ya se pidió uno hace menos de un minuto (ese sigue sirviendo).
+ */
+export async function issueInviteCode(token: string) {
   return db().begin(async (tx) => {
     const [found] = await tx<{ id: string; eventId: string }[]>`select id, event_id from invitations where token = ${token}`;
     if (!found) throw new AppError('NOT_FOUND', 'Esta invitación no existe');
     const event = await lockEvent(tx, found.eventId);
     const [inv] = await tx<Invitation[]>`select * from invitations where id = ${found.id} for update`;
-    if (inv.status === 'accepted') throw new AppError('INVALID', 'Ya aceptaste esta invitación.');
-    if (inv.status === 'revoked') throw new AppError('INVALID', 'El organizador canceló esta invitación.');
+    assertInvitationOpen(inv);
+    await assertCanJoin(tx, event);
+    const issued = await issueCode(tx, event.id, inv.email, 'invite');
+    if (issued === 'daily') throw new AppError('RATE_LIMITED', 'Ya pediste demasiados códigos hoy. Intenta de nuevo mañana.');
+    return { invitation: inv, event, code: issued === 'cooldown' ? null : issued };
+  });
+}
+
+/**
+ * Acepta la invitación con el código que llegó al correo invitado: crea al
+ * participante con ese correo. Nunca sortea.
+ */
+export async function acceptInvitation(token: string, input: Acceptance, code: string) {
+  const [pre] = await db()<Invitation[]>`select * from invitations where token = ${token}`;
+  if (!pre) throw new AppError('NOT_FOUND', 'Esta invitación no existe');
+  assertInvitationOpen(pre);
+  if (!(await consumeCode(pre.eventId, pre.email, code, 'invite')))
+    throw new AppError('CODE_INVALID', 'El código no es correcto o ya venció. Revisa tu correo o pide uno nuevo.');
+
+  return db().begin(async (tx) => {
+    const event = await lockEvent(tx, pre.eventId);
+    const [inv] = await tx<Invitation[]>`select * from invitations where id = ${pre.id} for update`;
+    assertInvitationOpen(inv);
     await assertCanJoin(tx, event);
 
     const [dup] = await tx`select 1 from participants where event_id = ${event.id} and email = ${inv.email}`;
@@ -569,7 +603,65 @@ const LOGIN_CODE_MAX_ATTEMPTS = 5;
 /** Tope de códigos por correo y evento en 24 h: limita el gasto de correo y la fuerza bruta. */
 const LOGIN_CODE_MAX_PER_DAY = 8;
 
-const hashCode = (eventId: string, code: string) => createHash('sha256').update(`${eventId}:${code}`).digest('hex');
+type CodePurpose = 'login' | 'invite';
+
+const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
+const hashCode = (eventId: string, code: string) => sha256(`${eventId}:${code}`);
+
+/**
+ * Genera un código de 6 dígitos para ese correo en el evento, respetando la
+ * espera de un minuto (por propósito) y el tope diario (cuenta todos).
+ * Invalida los códigos anteriores del mismo propósito.
+ */
+async function issueCode(tx: Sql, eventId: string, mail: string, purpose: CodePurpose): Promise<string | 'cooldown' | 'daily'> {
+  const [stats] = await tx<{ recent: number; today: number }[]>`
+    select
+      count(*) filter (where purpose = ${purpose} and created_at > now() - make_interval(secs => ${LOGIN_CODE_COOLDOWN_SECONDS}))::int as recent,
+      count(*)::int as today
+    from login_codes
+    where event_id = ${eventId} and email = ${mail} and created_at > now() - interval '1 day'`;
+  if (stats.recent > 0) return 'cooldown';
+  if (stats.today >= LOGIN_CODE_MAX_PER_DAY) return 'daily';
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  await tx`
+    update login_codes set used_at = now()
+    where event_id = ${eventId} and email = ${mail} and purpose = ${purpose} and used_at is null`;
+  await tx`
+    insert into login_codes (event_id, email, code_hash, purpose, expires_at)
+    values (${eventId}, ${mail}, ${hashCode(eventId, code)}, ${purpose}, now() + make_interval(mins => ${LOGIN_CODE_TTL_MINUTES}))`;
+  return code;
+}
+
+/**
+ * Revisa y gasta el código vigente. Tras 5 intentos fallidos el código queda
+ * inutilizado. El conteo de intentos se guarda aunque falle: por eso regresa
+ * false en vez de lanzar dentro de la transacción.
+ */
+async function consumeCode(eventId: string, email: string, code: string, purpose: CodePurpose): Promise<boolean> {
+  const mail = email.trim().toLowerCase();
+  const clean = code.replace(/\D/g, '');
+  if (clean.length !== 6) return false;
+  return db().begin(async (tx) => {
+    const [row] = await tx<{ id: string; codeHash: string; attempts: number }[]>`
+      select id, code_hash, attempts from login_codes
+      where event_id = ${eventId} and email = ${mail} and purpose = ${purpose}
+        and used_at is null and expires_at > now()
+      order by created_at desc limit 1
+      for update`;
+    if (!row) return false;
+    const ok = timingSafeEqual(Buffer.from(row.codeHash, 'hex'), Buffer.from(hashCode(eventId, clean), 'hex'));
+    if (!ok) {
+      const attempts = row.attempts + 1;
+      await tx`
+        update login_codes set attempts = ${attempts}
+          ${attempts >= LOGIN_CODE_MAX_ATTEMPTS ? tx`, used_at = now()` : tx``}
+        where id = ${row.id}`;
+      return false;
+    }
+    await tx`update login_codes set used_at = now() where id = ${row.id}`;
+    return true;
+  });
+}
 
 /**
  * Genera un código de 6 dígitos para un participante del evento. Regresa null
@@ -588,58 +680,71 @@ export async function issueLoginCode(eventId: string, email: string) {
       return null;
     };
     if (!participant) return skip('no es participante (¿aceptó ya su invitación?)');
-    const [stats] = await tx<{ recent: number; today: number }[]>`
-      select
-        count(*) filter (where created_at > now() - make_interval(secs => ${LOGIN_CODE_COOLDOWN_SECONDS}))::int as recent,
-        count(*)::int as today
-      from login_codes
-      where event_id = ${eventId} and email = ${mail} and created_at > now() - interval '1 day'`;
-    if (stats.recent > 0) return skip(`ya pidió uno hace menos de ${LOGIN_CODE_COOLDOWN_SECONDS} s`);
-    if (stats.today >= LOGIN_CODE_MAX_PER_DAY) return skip(`llegó al límite de ${LOGIN_CODE_MAX_PER_DAY} códigos por día`);
-    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    await tx`update login_codes set used_at = now() where event_id = ${eventId} and email = ${mail} and used_at is null`;
-    await tx`
-      insert into login_codes (event_id, email, code_hash, expires_at)
-      values (${eventId}, ${mail}, ${hashCode(eventId, code)}, now() + make_interval(mins => ${LOGIN_CODE_TTL_MINUTES}))`;
-    return { participant, code };
+    const issued = await issueCode(tx, eventId, mail, 'login');
+    if (issued === 'cooldown') return skip(`ya pidió uno hace menos de ${LOGIN_CODE_COOLDOWN_SECONDS} s`);
+    if (issued === 'daily') return skip(`llegó al límite de ${LOGIN_CODE_MAX_PER_DAY} códigos por día`);
+    return { participant, code: issued };
   });
 }
 
-/** Valida el código; tras 5 intentos fallidos el código queda inutilizado. */
+/** Valida el código de entrada y regresa al participante. */
 export async function verifyLoginCode(eventId: string, email: string, code: string): Promise<Participant> {
   const mail = email.trim().toLowerCase();
-  const clean = code.replace(/\D/g, '');
   const invalid = new AppError('CODE_INVALID', 'El código no es correcto o ya venció. Revisa tu correo o pide uno nuevo.');
-  if (clean.length !== 6) throw invalid;
-  // El conteo de intentos debe guardarse aunque falle: por eso no lanzamos dentro de la transacción.
-  const participant = await db().begin(async (tx) => {
-    const [row] = await tx<{ id: string; codeHash: string; attempts: number }[]>`
-      select id, code_hash, attempts from login_codes
-      where event_id = ${eventId} and email = ${mail} and used_at is null and expires_at > now()
-      order by created_at desc limit 1
-      for update`;
-    if (!row) return null;
-    const ok = timingSafeEqual(Buffer.from(row.codeHash, 'hex'), Buffer.from(hashCode(eventId, clean), 'hex'));
-    if (!ok) {
-      const attempts = row.attempts + 1;
-      await tx`
-        update login_codes set attempts = ${attempts}
-          ${attempts >= LOGIN_CODE_MAX_ATTEMPTS ? tx`, used_at = now()` : tx``}
-        where id = ${row.id}`;
-      return null;
-    }
-    await tx`update login_codes set used_at = now() where id = ${row.id}`;
-    const [p] = await tx<Participant[]>`select * from participants where event_id = ${eventId} and email = ${mail}`;
-    return p ?? null;
-  });
-  if (!participant) throw invalid;
-  return participant;
+  if (!(await consumeCode(eventId, mail, code, 'login'))) throw invalid;
+  const [p] = await db()<Participant[]>`select * from participants where event_id = ${eventId} and email = ${mail}`;
+  if (!p) throw invalid;
+  return p;
 }
 
-/** Limpieza diaria de códigos viejos y contadores de límites vencidos. */
+/** Limpieza diaria de códigos viejos, sesiones vencidas y contadores de límites vencidos. */
 export async function purgeLoginCodes() {
   await db()`delete from login_codes where created_at < now() - interval '1 day'`;
+  await db()`delete from sessions where expires_at < now()`;
   await db()`delete from rate_limits where window_start < now() - interval '1 day'`;
+}
+
+// ───────────────────────── Sesiones y enlace personal ─────────────────────────
+
+export const SESSION_DAYS = 60;
+
+/** Abre una sesión para el navegador. Regresa el token para la cookie; en la BD solo queda su hash. */
+export async function createSession(participantId: string) {
+  const raw = newToken(32);
+  await db()`
+    insert into sessions (participant_id, token_hash, expires_at)
+    values (${participantId}, ${sha256(raw)}, now() + make_interval(days => ${SESSION_DAYS}))`;
+  return raw;
+}
+
+export async function getParticipantBySession(raw: string) {
+  const [row] = await db()<(Participant & { event: EventRow })[]>`
+    select p.*, to_jsonb(e.*) as event
+    from sessions s
+    join participants p on p.id = s.participant_id
+    join events e on e.id = p.event_id
+    where s.token_hash = ${sha256(raw)} and s.expires_at > now()`;
+  return withEvent(row);
+}
+
+export async function deleteSession(raw: string) {
+  await db()`delete from sessions where token_hash = ${sha256(raw)}`;
+}
+
+/**
+ * Cambia el enlace personal (/p/...) y cierra todas las sesiones de esa persona.
+ * El enlace anterior deja de servir. Con `eventId` solo aplica dentro de ese evento.
+ */
+export async function rotateAccessToken(participantId: string, eventId?: string) {
+  return db().begin(async (tx) => {
+    const [p] = await tx<Participant[]>`
+      update participants set access_token = ${newToken()}
+      where id = ${participantId} ${eventId ? tx`and event_id = ${eventId}` : tx``}
+      returning *`;
+    if (!p) throw new AppError('NOT_FOUND', 'Ese participante no está en el evento');
+    await tx`delete from sessions where participant_id = ${p.id}`;
+    return p;
+  });
 }
 
 // ───────────────────────── Límites anti-abuso ─────────────────────────

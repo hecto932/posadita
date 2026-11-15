@@ -1,4 +1,14 @@
-import { adminRecoveryEmail, drawEmail, invitationEmail, loginCodeEmail, organizerEmail, registeredEmail, reminderEmail } from './emails';
+import {
+  adminRecoveryEmail,
+  drawEmail,
+  invitationEmail,
+  inviteCodeEmail,
+  loginCodeEmail,
+  newLinkEmail,
+  organizerEmail,
+  registeredEmail,
+  reminderEmail,
+} from './emails';
 import { sendMail, type Mail } from './mailer';
 import {
   LOGIN_CODE_TTL_MINUTES,
@@ -42,6 +52,11 @@ export const notifyRegistered = (e: EventRow, p: Participant) =>
 
 export const notifyLoginCode = (e: EventRow, p: Participant, code: string) =>
   deliver(e.id, p.id, 'login_code', loginCodeEmail(e, p, code, LOGIN_CODE_TTL_MINUTES));
+
+export const notifyInviteCode = (e: EventRow, inv: Invitation, code: string) =>
+  deliver(e.id, null, 'invite_code', inviteCodeEmail(e, inv, code, LOGIN_CODE_TTL_MINUTES));
+
+export const notifyNewLink = (e: EventRow, p: Participant) => deliver(e.id, p.id, 'new_link', newLinkEmail(e, p));
 
 export const notifyAdminRecovery = (to: string, events: EventRow[]) =>
   deliver(events[0].id, null, 'admin_recovery', adminRecoveryEmail(to, events));

@@ -5,8 +5,12 @@ declare global {
 }
 
 function createClient() {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('Falta DATABASE_URL');
+  // DATABASE_URL manual, o POSTGRES_URL si se conectó Supabase desde el Marketplace de Vercel.
+  const raw = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+  if (!raw) throw new Error('Falta DATABASE_URL (o POSTGRES_URL)');
+  // postgres.js manda los query params desconocidos (p. ej. `supabase=base-pooler.x`)
+  // como parámetros de conexión y Postgres los rechaza. El SSL lo fijamos abajo.
+  const url = raw.split('?')[0];
   const isLocal = /localhost|127\.0\.0\.1/.test(url);
   return postgres(url, {
     // Supabase "Transaction pooler" (puerto 6543) no soporta prepared statements.

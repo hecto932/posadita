@@ -3,10 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { MAX_IMAGE_BYTES, STORAGE_BUCKET } from './config';
 
 let client: SupabaseClient | null = null;
+// Funciona con la "secret key" nueva (sb_secret_...) o la service_role legacy
+// (la integración de Vercel crea SUPABASE_SERVICE_ROLE_KEY).
+const secretKey = () => process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
 function supabase() {
   const url = process.env.SUPABASE_URL;
-  // Funciona con la "secret key" nueva (sb_secret_...) o la service_role legacy.
-  const key = process.env.SUPABASE_SECRET_KEY;
+  const key = secretKey();
   if (!url || !key) throw new Error('Faltan SUPABASE_URL / SUPABASE_SECRET_KEY para subir imágenes');
   client ??= createClient(url, key, { auth: { persistSession: false } });
   return client;
@@ -15,7 +17,7 @@ function supabase() {
 const EXT: Record<string, string> = { 'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif' };
 
 export function storageEnabled() {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
+  return Boolean(process.env.SUPABASE_URL && secretKey());
 }
 
 /** Sube la imagen y regresa su ruta dentro del bucket. */

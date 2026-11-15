@@ -117,7 +117,7 @@
 
 /* Contenedores */
 @utility card {
-  @apply rounded-3xl border border-linea bg-superficie p-6 shadow-tarjeta sm:p-8;
+  @apply rounded-3xl border border-linea bg-superficie p-5 shadow-tarjeta sm:p-8;
 }
 @utility card-title {
   @apply flex items-center gap-3 font-display text-xl font-bold;
@@ -164,6 +164,11 @@
 }
 @utility btn-danger {
   @apply btn border-peligro bg-superficie text-peligro hover:bg-peligro-suave;
+}
+
+/* Grupo de botones: apilados a lo ancho en celular, en fila desde sm. */
+@utility acciones {
+  @apply grid gap-3 sm:flex sm:flex-wrap sm:items-center;
 }
 
 /* Enlaces dentro de texto */

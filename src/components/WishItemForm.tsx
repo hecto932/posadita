@@ -155,7 +155,7 @@ export function WishItemForm({
           />
         </div>
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="acciones">
         <SubmitButton pendingText="Guardando…">{submitLabel}</SubmitButton>
         {onDone && item && (
           <button type="button" className="btn-ghost" onClick={onDone}>

@@ -59,7 +59,7 @@ export async function ParticipantView({
             Cuando quieras volver, entra a la página del evento con tu correo. También te mandamos tu enlace personal por correo y puedes guardarlo en tu
             WhatsApp:
           </p>
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="acciones mt-4">
             <a href={participant.phone ? waTo(participant.phone, selfMsg) : waShare(selfMsg)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp">
               <WhatsAppIcon />
               Mandármelo por WhatsApp
@@ -141,12 +141,12 @@ export async function ParticipantView({
           <h2 className="text-xl font-bold">Tu enlace personal</h2>
           <p className="mt-1 text-cafe">Guárdalo para volver a entrar sin código. No lo compartas.</p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <CopyButton text={myUrl} label="Copiar enlace" />
+        <div className="acciones">
           <a href={participant.phone ? waTo(participant.phone, selfMsg) : waShare(selfMsg)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp">
             <WhatsAppIcon />
             Guardar en WhatsApp
           </a>
+          <CopyButton text={myUrl} label="Copiar enlace" />
         </div>
       </section>
 

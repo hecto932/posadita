@@ -19,10 +19,11 @@ import {
 import { EventFacts, EventFields, Skeleton, StatusBadge } from '@/components/EventBits';
 import { ActionButton, ActionForm, CopyButton, SubmitButton } from '@/components/forms';
 import { WhatsAppIcon } from '@/components/icons';
+import { LinkBox, ShareButtons } from '@/components/Share';
 import { appUrl, MIN_PARTICIPANTS } from '@/lib/config';
 import { formatDateTime, formatMXN } from '@/lib/format';
 import * as svc from '@/lib/service';
-import { waShare, waTo } from '@/lib/whatsapp';
+import { waTo } from '@/lib/whatsapp';
 
 export const metadata: Metadata = { title: 'Panel del organizador', robots: { index: false, follow: false } };
 
@@ -112,6 +113,16 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
         </div>
         <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">{event.name}</h1>
         <EventFacts event={event} className="mt-3" />
+        <nav aria-label="Accesos rápidos" className="mt-5 flex flex-wrap gap-3">
+          <Link href={`/e/${event.slug}`} className="btn-secondary flex-1 basis-36 sm:flex-none">
+            <span aria-hidden>👀</span> Ver página
+          </Link>
+          {mine && (
+            <Link href={`/p/${mine.accessToken}`} className="btn-secondary flex-1 basis-36 sm:flex-none">
+              <span aria-hidden>🎁</span> Mi lista
+            </Link>
+          )}
+        </nav>
       </section>
 
       <section className="card space-y-4">
@@ -132,54 +143,45 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
             </label>
             <textarea id="emails" name="emails" rows={3} required className="input" aria-describedby="emails-hint" placeholder={'ana@correo.com, beto@correo.com\ncarla@correo.com'} />
             <p id="emails-hint" className="hint">Sepáralos con comas o uno por renglón. Máximo 50 a la vez.</p>
-            <SubmitButton pendingText="Invitando…">Enviar invitaciones 💌</SubmitButton>
+            <SubmitButton pendingText="Invitando…" className="btn-primary w-full sm:w-auto">Enviar invitaciones 💌</SubmitButton>
           </ActionForm>
         )}
         {invitations.length > 0 && (
           <ul className="divide-y divide-linea">
             {invitations.map((inv) => (
-              <li key={inv.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
-                <span className="min-w-0 flex-1 basis-48 [overflow-wrap:anywhere]">{inv.email}</span>
-                <span className={INVITE_LABEL[inv.status].cls}>{INVITE_LABEL[inv.status].text}</span>
-                {!drawn && inv.status === 'pending' && (
-                  <ActionButton action={resendInvitationAction.bind(null, token, inv.id)} className="btn-ghost" pendingText="…">
-                    Reenviar
-                  </ActionButton>
-                )}
+              <li key={inv.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3">
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{inv.email}</span>
+                  <span className={`${INVITE_LABEL[inv.status].cls} shrink-0`}>{INVITE_LABEL[inv.status].text}</span>
+                </div>
                 {(inv.status === 'pending' || inv.status === 'declined') && (
-                  <ActionButton
-                    action={revokeInvitationAction.bind(null, token, inv.id)}
-                    className="btn-ghost text-peligro"
-                    confirm={`¿Cancelar la invitación de ${inv.email}?`}
-                    pendingText="…"
-                  >
-                    Cancelar
-                  </ActionButton>
+                  <div className="flex flex-wrap gap-2">
+                    {!drawn && inv.status === 'pending' && (
+                      <ActionButton action={resendInvitationAction.bind(null, token, inv.id)} className="btn-ghost" pendingText="…">
+                        Reenviar
+                      </ActionButton>
+                    )}
+                    <ActionButton
+                      action={revokeInvitationAction.bind(null, token, inv.id)}
+                      className="btn-ghost text-peligro"
+                      confirm={`¿Cancelar la invitación de ${inv.email}?`}
+                      pendingText="…"
+                    >
+                      Cancelar
+                    </ActionButton>
+                  </div>
                 )}
               </li>
             ))}
           </ul>
         )}
-        <div className="space-y-3 border-t border-linea pt-5">
-          <p className="text-cafe">Página del evento (cada invitado entra con su correo y un código):</p>
-          <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-crema p-3 pl-4">
-            <code className="min-w-0 flex-1 basis-56 text-sm [overflow-wrap:anywhere]">{publicUrl}</code>
-            <CopyButton text={publicUrl} className="btn-ghost" />
+        <div className="space-y-4 border-t border-linea pt-5">
+          <div>
+            <h3 className="font-display text-lg font-bold">Comparte la página del evento</h3>
+            <p className="mt-1 text-cafe">Cada invitado entra con su correo y un código.</p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <a href={waShare(inviteMsg)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp">
-              <WhatsAppIcon />
-              Avisar al grupo por WhatsApp
-            </a>
-            <Link href={`/e/${event.slug}`} className="btn-secondary">
-              Ver página del evento
-            </Link>
-            {mine && (
-              <Link href={`/p/${mine.accessToken}`} className="btn-secondary">
-                Mi lista de deseos
-              </Link>
-            )}
-          </div>
+          <LinkBox url={publicUrl} />
+          <ShareButtons text={inviteMsg} title={event.name} />
         </div>
       </section>
 
@@ -194,8 +196,8 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
         {people.length ? (
           <ul className="divide-y divide-linea">
             {people.map((p) => (
-              <li key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
-                <div className="min-w-0 flex-1 basis-56">
+              <li key={p.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:gap-4">
+                <div className="min-w-0 flex-1">
                   <p className="text-lg font-semibold">
                     {p.name} {p.isOrganizer && <span className="text-sm font-medium text-cafe">(tú)</span>}
                   </p>
@@ -204,24 +206,26 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
                     {p.phone ? ` · ${p.phone}` : ''} · {p.itemCount} {p.itemCount === 1 ? 'deseo' : 'deseos'}
                   </p>
                 </div>
-                {drawn && p.phone && !p.isOrganizer && (
-                  <a href={waTo(p.phone, personalNudge(p.name))} target="_blank" rel="noopener noreferrer" className="btn-ghost text-whatsapp-enlace">
-                    <WhatsAppIcon />
-                    WhatsApp
-                  </a>
-                )}
                 {!p.isOrganizer && (
-                  <ActionButton
-                    action={removeParticipantAction.bind(null, token, p.id)}
-                    className="btn-ghost text-peligro"
-                    confirm={
-                      drawn
-                        ? `Quitar a ${p.name} rehace el sorteo y se avisa a todos de nuevo. ¿Continuar?`
-                        : `¿Quitar a ${p.name} del intercambio?`
-                    }
-                  >
-                    Quitar
-                  </ActionButton>
+                  <div className="flex flex-wrap gap-2">
+                    {drawn && p.phone && (
+                      <a href={waTo(p.phone, personalNudge(p.name))} target="_blank" rel="noopener noreferrer" className="btn-ghost text-whatsapp-enlace">
+                        <WhatsAppIcon />
+                        WhatsApp
+                      </a>
+                    )}
+                    <ActionButton
+                      action={removeParticipantAction.bind(null, token, p.id)}
+                      className="btn-ghost text-peligro"
+                      confirm={
+                        drawn
+                          ? `Quitar a ${p.name} rehace el sorteo y se avisa a todos de nuevo. ¿Continuar?`
+                          : `¿Quitar a ${p.name} del intercambio?`
+                      }
+                    >
+                      Quitar
+                    </ActionButton>
+                  </div>
                 )}
               </li>
             ))}
@@ -297,18 +301,15 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
               🗓️ Sorteo: {formatDateTime(event.drawnAt, event.timezone)}. A cada quien le llegó un correo con su amigo secreto. Tú tampoco puedes ver quién le tocó a
               quién. 🤫
             </p>
-            <div className="flex flex-wrap gap-3">
-              <a href={waShare(drawnMsg)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp">
-                <WhatsAppIcon />
-                Avisar al grupo por WhatsApp
-              </a>
+            <ShareButtons text={drawnMsg} title={event.name} />
+            <div className="acciones">
               <ActionButton action={bind(resendDrawEmailsAction)} pendingText="Enviando…">
                 Reenviar correos
               </ActionButton>
             </div>
             <details className="rounded-2xl bg-crema px-4 py-1">
               <summary className="font-semibold">Opciones avanzadas</summary>
-              <div className="flex flex-wrap gap-3 pt-2 pb-4">
+              <div className="acciones pt-2 pb-4">
                 <ActionButton action={bind(redrawAction)} confirm="Se hará un sorteo NUEVO y se avisará a todos otra vez. ¿Continuar?" pendingText="Sorteando…">
                   Rehacer sorteo
                 </ActionButton>
@@ -326,14 +327,16 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
               {pendingInvites > 0 && ` Ojo: todavía hay ${pendingInvites} ${pendingInvites === 1 ? 'invitación pendiente' : 'invitaciones pendientes'}.`}
             </p>
             {people.length >= MIN_PARTICIPANTS ? (
-              <ActionButton
-                action={bind(drawAction)}
-                className="btn-primary btn-lg"
-                confirm={`Se sorteará entre ${people.length} personas y se cerrarán las invitaciones. ¿Listo?`}
-                pendingText="Sorteando…"
-              >
-                Hacer el sorteo ahora 🎲
-              </ActionButton>
+              <div className="acciones">
+                <ActionButton
+                  action={bind(drawAction)}
+                  className="btn-primary btn-lg"
+                  confirm={`Se sorteará entre ${people.length} personas y se cerrarán las invitaciones. ¿Listo?`}
+                  pendingText="Sorteando…"
+                >
+                  Hacer el sorteo ahora 🎲
+                </ActionButton>
+              </div>
             ) : (
               <p className="chip">Faltan {MIN_PARTICIPANTS - people.length} para poder sortear</p>
             )}
@@ -358,7 +361,7 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
         <summary className="font-display text-xl font-bold">Editar detalles del evento</summary>
         <ActionForm action={updateEventAction.bind(null, token)} className="mt-4 space-y-5 pb-2">
           <EventFields event={event} />
-          <SubmitButton pendingText="Guardando…">Guardar cambios</SubmitButton>
+          <SubmitButton pendingText="Guardando…" className="btn-primary w-full sm:w-auto">Guardar cambios</SubmitButton>
         </ActionForm>
       </details>
 
@@ -367,7 +370,7 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
         <ActionForm action={deleteEventAction.bind(null, token)} className="mt-4 space-y-3 pb-2">
           <label htmlFor="confirmName">Se borra todo: participantes, listas, imágenes y el sorteo. No se puede deshacer. Para confirmar, escribe el nombre del evento.</label>
           <input id="confirmName" name="confirmName" className="input" placeholder={`Escribe: ${event.name}`} required />
-          <SubmitButton className="btn-danger" pendingText="Eliminando…">
+          <SubmitButton className="btn-danger w-full sm:w-auto" pendingText="Eliminando…">
             Eliminar para siempre
           </SubmitButton>
         </ActionForm>

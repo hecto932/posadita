@@ -105,7 +105,7 @@ export function ActionButton({
   const [state, setState] = useState<ActionState>(null);
   const [pending, startTransition] = useTransition();
   return (
-    <span className="inline-flex flex-col items-start">
+    <span className="inline-flex flex-col items-stretch sm:items-start">
       <button
         type="button"
         disabled={pending}

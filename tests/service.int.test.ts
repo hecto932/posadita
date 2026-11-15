@@ -46,6 +46,9 @@ d('service (Postgres)', async () => {
   it('crea evento con organizador participante, invita, sortea y mantiene el secreto', async () => {
     const { event, organizer } = await svc.createEvent({ ...base, name: 'Posada familiar' });
     expect(event.slug).toHaveLength(8);
+    expect(event.code).toBeGreaterThanOrEqual(100000);
+    expect(event.code).toBeLessThanOrEqual(999999);
+    expect((await svc.getEventByCode(event.code))?.id).toBe(event.id);
     expect(organizer?.isOrganizer).toBe(true);
 
     for (const n of ['Ana', 'Beto', 'Carla']) await join(event.id, n, `${n}@Example.com`);
@@ -164,8 +167,10 @@ d('service (Postgres)', async () => {
 
     const wrong = issued.code === '000000' ? '111111' : '000000';
     await expect(svc.verifyLoginCode(event.id, 'lupe@c.com', wrong)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    expect(issued.to).toMatchObject({ participantId: participant.id, name: 'Lupe' });
     const me = await svc.verifyLoginCode(event.id, 'lupe@c.com', issued.code);
-    expect(me.accessToken).toBe(participant.accessToken);
+    expect(me.isOrganizer).toBe(false);
+    expect(me.participant?.accessToken).toBe(participant.accessToken);
     // un código usado no se reutiliza
     await expect(svc.verifyLoginCode(event.id, 'lupe@c.com', issued.code)).rejects.toMatchObject({ code: 'CODE_INVALID' });
     // otro evento no acepta el código
@@ -185,6 +190,29 @@ d('service (Postgres)', async () => {
     const third = (await svc.issueLoginCode(event.id, 'lupe@c.com'))!;
     await db()`update login_codes set expires_at = now() - interval '1 second' where event_id = ${event.id}`;
     await expect(svc.verifyLoginCode(event.id, 'lupe@c.com', third.code)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+  });
+
+  it('entrar con número de evento: el organizador también recibe código (participe o no)', async () => {
+    // Organizador que NO participa: entra a su panel, sin sesión de participante.
+    const { event } = await svc.createEvent({ ...base, name: 'Solo organiza', organizerParticipates: false });
+    expect((await svc.getEventByCode(event.code))?.id).toBe(event.id);
+    const org = (await svc.issueLoginCode(event.id, 'HECTOR@example.com'))!;
+    expect(org.to).toEqual({ participantId: null, name: 'Héctor', email: 'hector@example.com' });
+    expect(await svc.verifyLoginCode(event.id, 'hector@example.com', org.code)).toEqual({ participant: null, isOrganizer: true });
+
+    // Organizador que SÍ participa: panel y además su sesión de participante.
+    const both = await svc.createEvent({ ...base, name: 'Organiza y juega' });
+    const mine = (await svc.issueLoginCode(both.event.id, 'hector@example.com'))!;
+    expect(mine.to.participantId).toBe(both.organizer!.id);
+    const res = await svc.verifyLoginCode(both.event.id, 'hector@example.com', mine.code);
+    expect(res.isOrganizer).toBe(true);
+    expect(res.participant?.id).toBe(both.organizer!.id);
+
+    // Desconocidos: ni código ni número de evento inventado.
+    expect(await svc.issueLoginCode(event.id, 'extra@x.com')).toBeNull();
+    expect(await svc.getEventByCode(event.code === 999999 ? 100000 : event.code + 1)).toSatisfy(
+      (e: { id: string } | null) => e === null || e.id !== event.id,
+    );
   });
 
   it('aceptar invitación exige el código que llega al correo invitado', async () => {
@@ -241,6 +269,9 @@ d('service (Postgres)', async () => {
 
     // Enlace nuevo: el anterior deja de servir y se cierran todas las sesiones.
     const other = await svc.createEvent({ ...base, name: 'Otro evento', organizerParticipates: false });
+    // Reenviar acceso: solo dentro de su evento, y sin cambiar el enlace.
+    expect((await svc.getEventParticipant(event.id, participant.id)).accessToken).toBe(participant.accessToken);
+    await expect(svc.getEventParticipant(other.event.id, participant.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await expect(svc.rotateAccessToken(participant.id, other.event.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
     const fresh = await svc.rotateAccessToken(participant.id, event.id);
     expect(fresh.accessToken).not.toBe(participant.accessToken);
@@ -330,6 +361,47 @@ d('service (Postgres)', async () => {
     expect(paths).toEqual([]);
     expect(await svc.getEventBySlug(event.slug)).toBeNull();
   });
+
+  it('borra eventos finalizados y todo lo relacionado', async () => {
+    const day = 86400_000;
+    const { event: old, organizer } = await svc.createEvent({ ...base, name: 'Ya pasó', eventAt: new Date(Date.now() - 3 * day) });
+    const { event: recent } = await svc.createEvent({ ...base, name: 'Fue ayer', eventAt: new Date(Date.now() - day) });
+    const { event: undatedOld } = await svc.createEvent({ ...base, name: 'Sin fecha viejo', eventAt: null });
+    const { event: undatedNew } = await svc.createEvent({ ...base, name: 'Sin fecha nuevo', eventAt: null });
+    await db()`update events set created_at = now() - interval '61 days' where id = ${undatedOld.id}`;
+
+    // Datos en todas las tablas hijas del evento vencido.
+    const { participant: ana } = await join(old.id, 'Ana', 'ana-old@x.com');
+    await join(old.id, 'Beto', 'beto-old@x.com');
+    await svc.inviteEmails(old.id, ['pendiente@x.com']);
+    await svc.addItem(ana.id, { title: 'Libro', note: null, url: null, estPriceMxn: null, imagePath: `${old.id}/${ana.id}/a.webp` });
+    await svc.issueLoginCode(old.id, 'ana-old@x.com');
+    await svc.createSession(organizer!.id);
+    await svc.logNotification({ eventId: old.id, participantId: ana.id, kind: 'registered', status: 'logged' });
+    await svc.performDraw(old.id);
+
+    const expired = await svc.expiredEventIds();
+    expect(expired).toContain(old.id);
+    expect(expired).toContain(undatedOld.id);
+    expect(expired).not.toContain(recent.id);
+    expect(expired).not.toContain(undatedNew.id);
+
+    expect(await svc.eventImagePaths(old.id)).toEqual([`${old.id}/${ana.id}/a.webp`]);
+    expect(await svc.deleteEvent(old.id)).toEqual([`${old.id}/${ana.id}/a.webp`]);
+
+    const [left] = await db()<{ n: number }[]>`
+      select (select count(*) from events where id = ${old.id})
+           + (select count(*) from participants where event_id = ${old.id})
+           + (select count(*) from wishlist_items where participant_id = ${ana.id})
+           + (select count(*) from assignments where event_id = ${old.id})
+           + (select count(*) from invitations where event_id = ${old.id})
+           + (select count(*) from login_codes where event_id = ${old.id})
+           + (select count(*) from sessions where participant_id = ${organizer!.id})
+           + (select count(*) from notifications where event_id = ${old.id}) as n`;
+    expect(Number(left.n)).toBe(0);
+    expect(await svc.expiredEventIds()).not.toContain(old.id);
+  });
+
   it('anti-abuso: límite por ventana, con costo variable', async () => {
     const key = `test:${crypto.randomUUID()}`;
     for (let i = 0; i < 3; i++) await svc.hitRateLimit(key, 3, 3600);

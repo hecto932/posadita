@@ -2,36 +2,74 @@
 
 import { useState } from 'react';
 import type { ActionState } from '@/app/actions';
-import { ActionForm, SubmitButton } from './forms';
+import { ActionForm, Honeypot, SubmitButton } from './forms';
 
 type FormAction = (prev: ActionState, fd: FormData) => Promise<ActionState>;
 
-/** Entrar al evento en dos pasos: correo → código de 6 dígitos. */
-export function CodeLogin({ requestCode, verifyCode }: { requestCode: FormAction; verifyCode: FormAction }) {
+/**
+ * Entrar al evento en dos pasos: correo → código de 6 dígitos.
+ * Con `askEventCode` (desde el inicio) también pide el número de evento.
+ */
+export function CodeLogin({
+  requestCode,
+  verifyCode,
+  askEventCode = false,
+}: {
+  requestCode: FormAction;
+  verifyCode: FormAction;
+  askEventCode?: boolean;
+}) {
   const [email, setEmail] = useState('');
+  const [eventCode, setEventCode] = useState('');
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const cleanEventCode = eventCode.replace(/\s/g, '');
 
   if (!sentTo) {
     return (
-      <ActionForm action={requestCode} onSuccess={() => setSentTo(email)}>
-        <label className="label" htmlFor="login-email">
-          Tu correo
-        </label>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <input
-            id="login-email"
-            name="email"
-            type="email"
-            required
-            autoComplete="email"
-            className="input"
-            placeholder="El correo con el que te invitaron"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <SubmitButton pendingText="Enviando…" className="btn-primary shrink-0">
-            Mándame un código
-          </SubmitButton>
+      <ActionForm action={requestCode} onSuccess={() => setSentTo(email)} className="space-y-4">
+        {askEventCode && (
+          <>
+            <Honeypot />
+            <div>
+              <label className="label" htmlFor="login-event-code">
+                Número de evento
+              </label>
+              <input
+                id="login-event-code"
+                name="eventCode"
+                required
+                inputMode="numeric"
+                autoComplete="off"
+                pattern="[0-9 ]{6,7}"
+                maxLength={7}
+                className="input font-display tracking-[0.2em]"
+                placeholder="123456"
+                value={eventCode}
+                onChange={(e) => setEventCode(e.target.value)}
+              />
+            </div>
+          </>
+        )}
+        <div>
+          <label className="label" htmlFor="login-email">
+            Tu correo
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              id="login-email"
+              name="email"
+              type="email"
+              required
+              autoComplete="email"
+              className="input"
+              placeholder="El correo con el que te invitaron"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <SubmitButton pendingText="Enviando…" className="btn-primary shrink-0">
+              Mándame un código
+            </SubmitButton>
+          </div>
         </div>
       </ActionForm>
     );
@@ -40,10 +78,12 @@ export function CodeLogin({ requestCode, verifyCode }: { requestCode: FormAction
   return (
     <div className="space-y-3">
       <p>
-        Si <b>{sentTo}</b> está en el evento, te llegó un código de 6 dígitos (revisa también Spam).
+        Si <b>{sentTo}</b> está en {askEventCode ? <>el evento <b>{cleanEventCode}</b></> : 'el evento'}, te llegó un código de 6 dígitos (revisa también
+        Spam).
       </p>
       <ActionForm action={verifyCode}>
         <input type="hidden" name="email" value={sentTo} />
+        {askEventCode && <input type="hidden" name="eventCode" value={cleanEventCode} />}
         <label className="label" htmlFor="login-code">
           Código
         </label>
@@ -66,7 +106,7 @@ export function CodeLogin({ requestCode, verifyCode }: { requestCode: FormAction
         </div>
       </ActionForm>
       <button type="button" className="btn-ghost" onClick={() => setSentTo(null)}>
-        Usar otro correo o pedir un código nuevo
+        {askEventCode ? 'Cambiar número, correo o pedir un código nuevo' : 'Usar otro correo o pedir un código nuevo'}
       </button>
     </div>
   );

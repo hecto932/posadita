@@ -29,6 +29,7 @@ function render(to: string, subject: string, b: Block): Mail {
 
 const eventFacts = (e: EventRow) =>
   [
+    `🔢 Número de evento: <b>${e.code}</b>`,
     `💰 Monto máximo: <b>${formatMXN(e.maxAmountMxn)}</b>`,
     e.eventAt ? `📅 ${h(formatDateTime(e.eventAt, e.timezone)!)}` : null,
     e.location ? `📍 ${h(e.location)}` : null,
@@ -92,7 +93,7 @@ export function invitationEmail(e: EventRow, inv: Invitation): Mail {
   });
 }
 
-export function loginCodeEmail(e: EventRow, p: Participant, code: string, minutes: number): Mail {
+export function loginCodeEmail(e: EventRow, p: Pick<Participant, 'name' | 'email'>, code: string, minutes: number): Mail {
   return render(p.email, `${code} es tu código para "${e.name}"`, {
     heading: `Tu código para entrar: ${code}`,
     lines: [

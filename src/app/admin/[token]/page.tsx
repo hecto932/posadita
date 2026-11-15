@@ -14,6 +14,7 @@ import {
   reopenAction,
   resendDrawEmailsAction,
   resendInvitationAction,
+  resendParticipantAccessAction,
   revokeInvitationAction,
   updateEventAction,
 } from '@/app/actions';
@@ -21,8 +22,8 @@ import { EventFacts, EventFields, Skeleton, StatusBadge } from '@/components/Eve
 import { ActionButton, ActionForm, CopyButton, SubmitButton } from '@/components/forms';
 import { WhatsAppIcon } from '@/components/icons';
 import { LinkBox, ShareButtons } from '@/components/Share';
-import { appUrl, MIN_PARTICIPANTS } from '@/lib/config';
-import { formatDateTime, formatMXN } from '@/lib/format';
+import { appUrl, autoDeleteAt, MIN_PARTICIPANTS } from '@/lib/config';
+import { formatDate, formatDateTime, formatMXN } from '@/lib/format';
 import * as svc from '@/lib/service';
 import { waTo } from '@/lib/whatsapp';
 
@@ -43,6 +44,9 @@ const KIND_LABEL: Record<string, string> = {
   reminder: 'Recordatorio',
   invitation: 'Invitaciones',
   login_code: 'Códigos de acceso',
+  invite_code: 'Códigos de invitación',
+  new_link: 'Enlaces nuevos',
+  access_resend: 'Reenvíos de acceso',
   admin_recovery: 'Recuperar panel',
 };
 const INVITE_LABEL: Record<svc.InvitationStatus, { text: string; cls: string }> = {
@@ -76,10 +80,11 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
     event.eventAt ? `📅 ${formatDateTime(event.eventAt, event.timezone)}` : null,
     `Les mandé una invitación por correo: acéptenla para entrar y armar su lista de deseos.`,
     `Después pueden entrar con su correo aquí 👉 ${publicUrl}`,
+    `o desde ${appUrl('/')} con el número de evento ${event.code}.`,
   ]
     .filter(Boolean)
     .join('\n');
-  const drawnMsg = `🎲 ¡Ya se hizo el sorteo de "${event.name}"! Revisen su correo para ver quién les tocó, o entren con su correo aquí: ${publicUrl}`;
+  const drawnMsg = `🎲 ¡Ya se hizo el sorteo de "${event.name}"! Revisen su correo para ver quién les tocó, o entren con su correo aquí: ${publicUrl} (número de evento: ${event.code})`;
   const personalNudge = (name: string) =>
     `Hola ${name} 👋 Ya se hizo el sorteo de "${event.name}". Te llegó un correo con tu amigo secreto (revisa Spam). También puedes entrar con tu correo aquí: ${publicUrl}`;
   const bind = <A extends unknown[], R>(fn: (t: string, ...a: A) => R) => fn.bind(null, token) as (...a: A) => R;
@@ -114,6 +119,10 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
         </div>
         <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">{event.name}</h1>
         <EventFacts event={event} className="mt-3" />
+        <p className="hint mt-3">
+          🧹 Para no guardar datos de más, el evento se borra solo a partir del {formatDate(autoDeleteAt(event), event.timezone)}.
+          {!event.eventAt && ' Ponle fecha en “Editar detalles del evento”.'}
+        </p>
         <nav aria-label="Accesos rápidos" className="mt-5 flex flex-wrap gap-3">
           <Link href={`/e/${event.slug}`} className="btn-secondary flex-1 basis-36 sm:flex-none">
             <span aria-hidden>👀</span> Ver página
@@ -208,10 +217,13 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <ActionButton action={resendParticipantAccessAction.bind(null, token, p.id)} className="btn-ghost" pendingText="Enviando…">
+                    Reenviar acceso
+                  </ActionButton>
                   <ActionButton
                     action={resetParticipantLinkAction.bind(null, token, p.id)}
                     className="btn-ghost"
-                    confirm={`El enlace personal de ${p.name} dejará de servir y le mandaremos uno nuevo por correo. Úsalo si su enlace se filtró. ¿Continuar?`}
+                    confirm={`El enlace personal de ${p.name} dejará de servir y le mandaremos uno nuevo por correo. Úsalo solo si su enlace se filtró; si solo lo perdió, usa «Reenviar acceso». ¿Continuar?`}
                   >
                     Nuevo enlace
                   </ActionButton>

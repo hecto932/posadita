@@ -85,6 +85,25 @@ alter table invitations add column if not exists last_sent_at timestamptz;
 -- Para "¿perdiste tu panel?": buscar eventos por correo del organizador.
 create index if not exists events_organizer_email_idx on events(organizer_email);
 
+-- Número de evento (6 dígitos) para entrar desde el inicio con número + correo.
+-- Los eventos que ya existían reciben uno al azar, sin repetir.
+alter table events add column if not exists code integer check (code between 100000 and 999999);
+do $$
+declare
+  r record;
+  c int;
+begin
+  for r in select id from events where code is null loop
+    loop
+      c := 100000 + floor(random() * 900000)::int;
+      exit when not exists (select 1 from events where code = c);
+    end loop;
+    update events set code = c where id = r.id;
+  end loop;
+end $$;
+create unique index if not exists events_code_key on events(code);
+alter table events alter column code set not null;
+
 -- Límite de peticiones en ventanas fijas (anti-abuso de correo). Se limpia a diario.
 create table if not exists rate_limits (
   key           text not null,
@@ -124,7 +143,7 @@ create table if not exists notifications (
   event_id        uuid not null references events(id) on delete cascade,
   participant_id  uuid references participants(id) on delete set null,
   channel         text not null default 'email',
-  kind            text not null,           -- registered | organizer | draw | reminder | invitation | login_code | invite_code | new_link
+  kind            text not null,           -- registered | organizer | draw | reminder | invitation | login_code | invite_code | new_link | access_resend | admin_recovery
   status          text not null,           -- sent | failed | logged
   error           text,
   created_at      timestamptz not null default now()

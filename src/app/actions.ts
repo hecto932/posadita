@@ -6,7 +6,7 @@ import { refresh } from 'next/cache';
 import { after } from 'next/server';
 import { z } from 'zod';
 import { DEFAULT_TIMEZONE, MX_TIMEZONES, sessionCookie } from '@/lib/config';
-import { normalizePhone, zonedLocalToUtc } from '@/lib/format';
+import { normalizePhone, parseEventCode, zonedLocalToUtc } from '@/lib/format';
 import {
   notifyAdminRecovery,
   notifyDrawResults,
@@ -15,6 +15,7 @@ import {
   notifyLoginCode,
   notifyNewLink,
   notifyOrganizer,
+  notifyParticipantAccess,
   notifyRegistered,
 } from '@/lib/notify';
 import * as svc from '@/lib/service';
@@ -83,9 +84,11 @@ const eventFields = z.object({
 
 function parseEventFields(fd: FormData) {
   const f = eventFields.parse(Object.fromEntries(fd));
+  // Obligatoria: el evento y todos sus datos se borran solos unos días después de esta fecha.
   const eventAt = f.eventAt ? zonedLocalToUtc(f.eventAt, f.timezone) : null;
+  if (!eventAt) throw new svc.AppError('INVALID', 'La fecha y hora del intercambio es obligatoria.');
   const signupDeadline = f.signupDeadline ? zonedLocalToUtc(f.signupDeadline, f.timezone) : null;
-  if (eventAt && signupDeadline && signupDeadline > eventAt)
+  if (signupDeadline && signupDeadline > eventAt)
     throw new svc.AppError('INVALID', 'La fecha límite para aceptar debe ser antes del evento.');
   return { ...f, maxAmountMxn: f.maxAmountMxn!, eventAt, signupDeadline };
 }
@@ -155,6 +158,7 @@ export async function createEventAction(_: ActionState, fd: FormData): Promise<A
     if (isBot(fd)) return fail('Algo salió mal. Intenta de nuevo.');
     await svc.hitRateLimit(`create:ip:${await clientIp()}`, 5, HOUR);
     const f = parseEventFields(fd);
+    if (f.eventAt < new Date()) return fail('La fecha del intercambio ya pasó.');
     if (f.signupDeadline && f.signupDeadline < new Date())
       return fail('La fecha límite para aceptar ya pasó.');
     const org = personFields.parse({ name: fd.get('organizerName'), email: fd.get('organizerEmail'), phone: fd.get('organizerPhone') });
@@ -221,35 +225,79 @@ export async function declineInvitationAction(inviteToken: string): Promise<Acti
 }
 
 // ───────── entrar al evento con correo + código ─────────
+// Dos puertas, mismo flujo: la página del evento (/e/[slug]) y el inicio, con
+// número de evento + correo. Quien organiza llega a su panel; quien participa,
+// a su página del evento (con su amigo secreto si ya hubo sorteo).
+
+const LOGIN_CODE_SENT = 'Si ese correo está en el evento, te llegó un código de 6 dígitos. Revisa también Spam.';
+
+/** Manda el código si el correo es de alguien del evento. Responde lo mismo exista o no, para no revelar quién está. */
+async function sendLoginCode(event: svc.EventRow | null, rawEmail: FormDataEntryValue | null): Promise<ActionState> {
+  const mail = email.parse(rawEmail);
+  await svc.hitRateLimit(`code:ip:${await clientIp()}`, 10, HOUR);
+  if (event) {
+    const issued = await svc.issueLoginCode(event.id, mail);
+    if (issued) after(() => notifyLoginCode(event, issued.to, issued.code));
+  }
+  return ok(LOGIN_CODE_SENT);
+}
+
+/** Valida el código y regresa a dónde mandar a la persona (el redirect va fuera del try). */
+async function finishLogin(event: svc.EventRow | null, fd: FormData): Promise<string> {
+  const mail = email.parse(fd.get('email'));
+  await svc.hitRateLimit(`verify:ip:${await clientIp()}`, 30, HOUR);
+  if (!event) throw new svc.AppError('CODE_INVALID', 'El código no es correcto o ya venció. Revisa tu correo o pide uno nuevo.');
+  const { participant, isOrganizer } = await svc.verifyLoginCode(event.id, mail, String(fd.get('code') ?? ''));
+  if (participant) await rememberParticipant(event.slug, participant.id);
+  return isOrganizer ? `/admin/${event.adminToken}` : `/e/${event.slug}`;
+}
 
 export async function requestCodeAction(slug: string, _: ActionState, fd: FormData): Promise<ActionState> {
   try {
-    const mail = email.parse(fd.get('email'));
-    await svc.hitRateLimit(`code:ip:${await clientIp()}`, 10, HOUR);
-    const event = await svc.getEventBySlug(slug);
-    if (event) {
-      const issued = await svc.issueLoginCode(event.id, mail);
-      if (issued) after(() => notifyLoginCode(event, issued.participant, issued.code));
-    }
-    // Misma respuesta exista o no, para no revelar quién está en el evento.
-    return ok('Si ese correo está en el evento, te llegó un código de 6 dígitos. Revisa también Spam.');
+    return await sendLoginCode(await svc.getEventBySlug(slug), fd.get('email'));
   } catch (err) {
     return fail(errorMessage(err));
   }
 }
 
 export async function verifyCodeAction(slug: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  let to: string;
   try {
-    const mail = email.parse(fd.get('email'));
-    await svc.hitRateLimit(`verify:ip:${await clientIp()}`, 30, HOUR);
     const event = await svc.getEventBySlug(slug);
     if (!event) throw new svc.AppError('NOT_FOUND', 'El evento no existe');
-    const participant = await svc.verifyLoginCode(event.id, mail, String(fd.get('code') ?? ''));
-    await rememberParticipant(slug, participant.id);
+    to = await finishLogin(event, fd);
   } catch (err) {
     return fail(errorMessage(err));
   }
-  redirect(`/e/${slug}`);
+  redirect(to);
+}
+
+/** Número de evento escrito a mano ("123 456" también vale). */
+function eventCodeFrom(fd: FormData): number {
+  const code = parseEventCode(fd.get('eventCode'));
+  if (code == null) throw new svc.AppError('INVALID', 'El número de evento tiene 6 dígitos.');
+  return code;
+}
+
+/** Desde el inicio: número de evento + correo → código al correo. */
+export async function requestHomeCodeAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    if (isBot(fd)) return ok(LOGIN_CODE_SENT);
+    return await sendLoginCode(await svc.getEventByCode(eventCodeFrom(fd)), fd.get('email'));
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
+}
+
+/** Desde el inicio: con el código del correo, al panel (organizador) o a la página del evento (participante). */
+export async function verifyHomeCodeAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  let to: string;
+  try {
+    to = await finishLogin(await svc.getEventByCode(eventCodeFrom(fd)), fd);
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
+  redirect(to);
 }
 
 export async function logoutAction(slug: string): Promise<ActionState> {
@@ -437,6 +485,8 @@ export async function updateEventAction(adminToken: string, _: ActionState, fd: 
   try {
     const e = await adminEventOrThrow(adminToken);
     const f = parseEventFields(fd);
+    // Una fecha pasada por error haría que el evento se borre solo: solo se acepta si no cambió.
+    if (+f.eventAt !== +(e.eventAt ?? 0) && f.eventAt < new Date()) return fail('La fecha del intercambio ya pasó.');
     await svc.updateEvent(e.id, f);
     refresh();
     return ok('Cambios guardados');
@@ -485,6 +535,7 @@ export async function resendDrawEmailsAction(adminToken: string): Promise<Action
   try {
     const e = await adminEventOrThrow(adminToken);
     if (e.status !== 'drawn') return fail('Aún no hay sorteo.');
+    await svc.hitRateLimit(`draw-resend:event:${e.id}`, 3, HOUR);
     after(() => notifyDrawResults(e));
     refresh();
     return ok('Reenviando correos del sorteo…');
@@ -512,6 +563,23 @@ export async function removeParticipantAction(adminToken: string, participantId:
   }
   // El botón desaparece junto con la persona; el aviso viaja en la URL.
   redirect(`/admin/${adminToken}?aviso=${encodeURIComponent(notice)}`);
+}
+
+/**
+ * "Reenviar acceso": si alguien perdió su correo o su enlace, se le manda otra
+ * vez a su correo registrado, con el mismo enlace. El aviso al organizador
+ * nunca menciona a quién le tocó.
+ */
+export async function resendParticipantAccessAction(adminToken: string, participantId: string): Promise<ActionState> {
+  try {
+    const e = await adminEventOrThrow(adminToken);
+    const p = await svc.getEventParticipant(e.id, participantId);
+    await svc.hitRateLimit(`access-resend:p:${p.id}`, 3, HOUR);
+    after(() => notifyParticipantAccess(e, p));
+    return ok(`Listo: le reenviamos su acceso a ${p.name} por correo.`);
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
 }
 
 /** El organizador invalida el enlace personal de alguien (p. ej. si se filtró); el nuevo le llega por correo. */

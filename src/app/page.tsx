@@ -1,4 +1,5 @@
-import { createEventAction, recoverAdminAction } from './actions';
+import { createEventAction, recoverAdminAction, requestHomeCodeAction, verifyHomeCodeAction } from './actions';
+import { CodeLogin } from '@/components/CodeLogin';
 import { EventFields } from '@/components/EventBits';
 import { ActionForm, Honeypot, SubmitButton } from '@/components/forms';
 
@@ -18,9 +19,24 @@ export default function Home() {
         <p className="mx-auto mt-4 max-w-lg text-lg text-cafe">
           Invitaciones por correo, listas de deseos y un sorteo que nadie puede espiar. Gratis.
         </p>
-        <a href="#crear" className="btn-primary btn-lg mt-6">
-          Organizar mi intercambio
-        </a>
+        <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <a href="#crear" className="btn-primary btn-lg">
+            Organizar mi intercambio
+          </a>
+          <a href="#entrar" className="btn-secondary btn-lg">
+            Entrar a mi evento
+          </a>
+        </div>
+      </section>
+
+      <section id="entrar" className="card scroll-mt-6">
+        <h2 className="text-2xl font-extrabold">¿Ya estás en un intercambio?</h2>
+        <p className="mt-2 mb-6 text-cafe">
+          Escribe el <b>número de evento</b> y tu correo. Te mandamos un código para entrar: si organizas, llegas a tu panel; si participas, ves tu lista
+          y, después del sorteo, a quién te tocó.
+        </p>
+        <CodeLogin askEventCode requestCode={requestHomeCodeAction} verifyCode={verifyHomeCodeAction} />
+        <p className="mt-5 text-sm text-cafe">El número de evento (6 dígitos) viene en tu invitación y en los correos del evento.</p>
       </section>
 
       <ol className="grid gap-3 sm:grid-cols-3">

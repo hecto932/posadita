@@ -1,4 +1,4 @@
-import { MX_TIMEZONES } from '@/lib/config';
+import { MX_TIMEZONES, RETENTION_DAYS_AFTER_EVENT } from '@/lib/config';
 import { formatDateTime, formatMXN, utcToZonedLocal } from '@/lib/format';
 import type { EventRow } from '@/lib/service';
 import { TimezoneSelect } from './forms';
@@ -7,6 +7,9 @@ export function EventFacts({ event, className = '' }: { event: EventRow; classNa
   const when = formatDateTime(event.eventAt, event.timezone);
   return (
     <ul className={`flex flex-wrap gap-2 ${className}`}>
+      <li className="chip" title="Con este número y tu correo entras desde la página de inicio">
+        🔢 Evento <b className="font-display tracking-wider">{event.code}</b>
+      </li>
       <li className="chip-ok">💰 Máximo {formatMXN(event.maxAmountMxn)}</li>
       {when && <li className="chip">📅 {when}</li>}
       {event.location && <li className="chip">📍 {event.location}</li>}
@@ -56,7 +59,18 @@ export function EventFields({ event }: { event?: EventRow }) {
           <label className="label" htmlFor="eventAt">
             Fecha y hora del intercambio
           </label>
-          <input id="eventAt" name="eventAt" type="datetime-local" defaultValue={event ? utcToZonedLocal(event.eventAt, event.timezone) : ''} className="input" />
+          <input
+            id="eventAt"
+            name="eventAt"
+            type="datetime-local"
+            required
+            defaultValue={event ? utcToZonedLocal(event.eventAt, event.timezone) : ''}
+            className="input"
+            aria-describedby="eventAt-hint"
+          />
+          <p id="eventAt-hint" className="hint">
+            {RETENTION_DAYS_AFTER_EVENT} días después de esta fecha se borra todo el evento: participantes, listas, fotos y sorteo.
+          </p>
         </div>
         <div>
           <label className="label" htmlFor="signupDeadline">

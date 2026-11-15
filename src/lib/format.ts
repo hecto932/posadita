@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 
 export { formatMXN, hostname } from './display';
@@ -6,6 +6,10 @@ export { formatMXN, hostname } from './display';
 export function formatDateTime(d: Date | null | undefined, timeZone: string): string | null {
   if (!d) return null;
   return new Intl.DateTimeFormat('es-MX', { dateStyle: 'full', timeStyle: 'short', timeZone }).format(d);
+}
+
+export function formatDate(d: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('es-MX', { dateStyle: 'full', timeZone }).format(d);
 }
 
 /** "2026-12-18T20:00" interpretado en `timeZone` → Date (UTC). */
@@ -74,6 +78,17 @@ const SLUG_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 export function slug(len = 8): string {
   const b = randomBytes(len);
   return Array.from(b, (x) => SLUG_ALPHABET[x % SLUG_ALPHABET.length]).join('');
+}
+
+/** Número de evento de 6 dígitos (100000–999999), para entrar desde el inicio. */
+export function eventCode(): number {
+  return randomInt(100_000, 1_000_000);
+}
+
+/** "123 456" → 123456; null si no son exactamente 6 dígitos. */
+export function parseEventCode(input: unknown): number | null {
+  const digits = String(input ?? '').replace(/\s/g, '');
+  return /^[1-9]\d{5}$/.test(digits) ? Number(digits) : null;
 }
 
 export function escapeHtml(s: string): string {

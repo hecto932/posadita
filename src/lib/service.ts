@@ -1,7 +1,8 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import { RETENTION_DAYS_AFTER_EVENT, RETENTION_DAYS_NO_DATE } from './config';
 import { db, type Sql } from './db';
 import { drawPairs, DrawError } from './draw';
-import { slug as newSlug, token as newToken } from './format';
+import { eventCode as newEventCode, slug as newSlug, token as newToken } from './format';
 import { MIN_PARTICIPANTS } from './config';
 
 // ───────────────────────── Tipos ─────────────────────────
@@ -9,6 +10,8 @@ import { MIN_PARTICIPANTS } from './config';
 export type EventRow = {
   id: string;
   slug: string;
+  /** Número de evento de 6 dígitos (para entrar desde el inicio). */
+  code: number;
   adminToken: string;
   name: string;
   description: string | null;
@@ -101,11 +104,26 @@ export type NewEvent = {
   organizerParticipates: boolean;
 };
 
+/** ¿El error es por un número de evento repetido? (muy raro: se reintenta con otro). */
+const isEventCodeClash = (err: unknown) =>
+  (err as { code?: string; constraint_name?: string })?.code === '23505' &&
+  (err as { constraint_name?: string }).constraint_name === 'events_code_key';
+
 export async function createEvent(input: NewEvent) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await insertEvent(input);
+    } catch (err) {
+      if (attempt >= 5 || !isEventCodeClash(err)) throw err;
+    }
+  }
+}
+
+async function insertEvent(input: NewEvent) {
   const { organizerPhone, organizerParticipates, ...fields } = input;
   return db().begin(async (tx) => {
     const [event] = await tx<EventRow[]>`
-      insert into events ${tx({ ...fields, slug: newSlug(), adminToken: newToken() })}
+      insert into events ${tx({ ...fields, slug: newSlug(), code: newEventCode(), adminToken: newToken() })}
       returning *`;
     let organizer: Participant | null = null;
     if (organizerParticipates) {
@@ -126,6 +144,11 @@ export async function createEvent(input: NewEvent) {
 
 export async function getEventBySlug(slug: string) {
   const [e] = await db()<EventRow[]>`select * from events where slug = ${slug}`;
+  return e ?? null;
+}
+
+export async function getEventByCode(code: number) {
+  const [e] = await db()<EventRow[]>`select * from events where code = ${code}`;
   return e ?? null;
 }
 
@@ -157,13 +180,32 @@ export async function updateEvent(eventId: string, patch: EventPatch) {
 /** Borra el evento y regresa las rutas de imágenes que hay que limpiar del Storage. */
 export async function deleteEvent(eventId: string): Promise<string[]> {
   return db().begin(async (tx) => {
-    const imgs = await tx<{ imagePath: string }[]>`
-      select w.image_path from wishlist_items w
-      join participants p on p.id = w.participant_id
-      where p.event_id = ${eventId} and w.image_path is not null`;
+    const imgs = await eventImagePaths(eventId, tx);
     await tx`delete from events where id = ${eventId}`;
-    return imgs.map((r) => r.imagePath);
+    return imgs;
   });
+}
+
+/** Rutas en el Storage de todas las fotos de las listas del evento. */
+export async function eventImagePaths(eventId: string, sql: Sql = db()): Promise<string[]> {
+  const rows = await sql<{ imagePath: string }[]>`
+    select w.image_path from wishlist_items w
+    join participants p on p.id = w.participant_id
+    where p.event_id = ${eventId} and w.image_path is not null`;
+  return rows.map((r) => r.imagePath);
+}
+
+/**
+ * Eventos que ya pasaron y hay que borrar por completo (ver `autoDeleteAt` en config).
+ * El límite acota cada corrida del cron; lo que falte se borra al día siguiente.
+ */
+export async function expiredEventIds(limit = 50): Promise<string[]> {
+  const rows = await db()<{ id: string }[]>`
+    select id from events
+    where (event_at is not null and event_at < now() - make_interval(days => ${RETENTION_DAYS_AFTER_EVENT}))
+       or (event_at is null and created_at < now() - make_interval(days => ${RETENTION_DAYS_NO_DATE}))
+    order by created_at limit ${limit}`;
+  return rows.map((r) => r.id);
 }
 
 async function lockEvent(tx: Sql, eventId: string): Promise<EventRow> {
@@ -218,6 +260,14 @@ export async function getOrganizerParticipant(eventId: string) {
   const [p] = await db()<Participant[]>`
     select * from participants where event_id = ${eventId} and is_organizer limit 1`;
   return p ?? null;
+}
+
+/** Un participante, solo si pertenece a ese evento (para acciones del organizador). */
+export async function getEventParticipant(eventId: string, participantId: string) {
+  const [p] = await db()<Participant[]>`
+    select * from participants where id = ${participantId} and event_id = ${eventId}`;
+  if (!p) throw new AppError('NOT_FOUND', 'Ese participante no está en el evento');
+  return p;
 }
 
 /** Revisa que el evento todavía acepte gente (estado, fecha límite y cupo). */
@@ -663,15 +713,21 @@ async function consumeCode(eventId: string, email: string, code: string, purpose
   });
 }
 
+/** A quién le llega el código de entrada: un participante o el organizador (participe o no). */
+export type LoginRecipient = { participantId: string | null; name: string; email: string };
+
 /**
- * Genera un código de 6 dígitos para un participante del evento. Regresa null
- * si el correo no participa, si ya se pidió uno hace menos de un minuto (el
+ * Genera un código de 6 dígitos para entrar al evento: para un participante o
+ * para el organizador (aunque no participe). Regresa null si el correo no es
+ * de ninguno de los dos, si ya se pidió uno hace menos de un minuto (el
  * anterior sigue sirviendo) o si ya se pidieron demasiados hoy. Quien llama no
  * debe revelar cuál de los casos pasó.
  */
-export async function issueLoginCode(eventId: string, email: string) {
+export async function issueLoginCode(eventId: string, email: string): Promise<{ to: LoginRecipient; code: string } | null> {
   const mail = email.trim().toLowerCase();
   return db().begin(async (tx) => {
+    const [event] = await tx<Pick<EventRow, 'organizerName' | 'organizerEmail'>[]>`
+      select organizer_name, organizer_email from events where id = ${eventId}`;
     const [participant] = await tx<Participant[]>`
       select * from participants where event_id = ${eventId} and email = ${mail} for update`;
     // Al usuario siempre le respondemos lo mismo; el motivo real solo va a los logs del servidor.
@@ -679,22 +735,38 @@ export async function issueLoginCode(eventId: string, email: string) {
       console.info(`[login_code] evento ${eventId.slice(0, 8)} | ${mail.slice(0, 3)}***@${mail.split('@')[1]} | NO se emitió código: ${reason}`);
       return null;
     };
-    if (!participant) return skip('no es participante (¿aceptó ya su invitación?)');
+    if (!event) return skip('el evento no existe');
+    const isOrganizer = event.organizerEmail.toLowerCase() === mail;
+    if (!participant && !isOrganizer) return skip('no es participante ni organizador (¿aceptó ya su invitación?)');
     const issued = await issueCode(tx, eventId, mail, 'login');
     if (issued === 'cooldown') return skip(`ya pidió uno hace menos de ${LOGIN_CODE_COOLDOWN_SECONDS} s`);
     if (issued === 'daily') return skip(`llegó al límite de ${LOGIN_CODE_MAX_PER_DAY} códigos por día`);
-    return { participant, code: issued };
+    const to: LoginRecipient = participant
+      ? { participantId: participant.id, name: participant.name, email: participant.email }
+      : { participantId: null, name: event.organizerName, email: mail };
+    return { to, code: issued };
   });
 }
 
-/** Valida el código de entrada y regresa al participante. */
-export async function verifyLoginCode(eventId: string, email: string, code: string): Promise<Participant> {
+/**
+ * Valida el código de entrada. Regresa al participante (si participa) y si el
+ * correo es el del organizador; lanza CODE_INVALID si no es ninguno de los dos.
+ */
+export async function verifyLoginCode(
+  eventId: string,
+  email: string,
+  code: string,
+): Promise<{ participant: Participant | null; isOrganizer: boolean }> {
   const mail = email.trim().toLowerCase();
   const invalid = new AppError('CODE_INVALID', 'El código no es correcto o ya venció. Revisa tu correo o pide uno nuevo.');
   if (!(await consumeCode(eventId, mail, code, 'login'))) throw invalid;
-  const [p] = await db()<Participant[]>`select * from participants where event_id = ${eventId} and email = ${mail}`;
-  if (!p) throw invalid;
-  return p;
+  const [[p], [e]] = await Promise.all([
+    db()<Participant[]>`select * from participants where event_id = ${eventId} and email = ${mail}`,
+    db()<{ organizerEmail: string }[]>`select organizer_email from events where id = ${eventId}`,
+  ]);
+  const isOrganizer = !!e && e.organizerEmail.toLowerCase() === mail;
+  if (!p && !isOrganizer) throw invalid;
+  return { participant: p ?? null, isOrganizer };
 }
 
 /** Limpieza diaria de códigos viejos, sesiones vencidas y contadores de límites vencidos. */

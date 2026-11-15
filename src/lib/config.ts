@@ -10,6 +10,17 @@ export const MIN_PARTICIPANTS = 3;
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 export const STORAGE_BUCKET = 'wishlist';
 
+/** Un evento y todos sus datos se borran solos estos días después de su fecha. */
+export const RETENTION_DAYS_AFTER_EVENT = 2;
+/** Respaldo para eventos viejos sin fecha: se borran estos días después de crearse. */
+export const RETENTION_DAYS_NO_DATE = 60;
+
+/** Desde cuándo el evento puede borrarse (el cron diario lo borra en su siguiente corrida). */
+export function autoDeleteAt(event: { eventAt: Date | null; createdAt: Date }): Date {
+  const [from, days] = event.eventAt ? [event.eventAt, RETENTION_DAYS_AFTER_EVENT] : [event.createdAt, RETENTION_DAYS_NO_DATE];
+  return new Date(+from + days * 86_400_000);
+}
+
 export function appUrl(path = ''): string {
   const base =
     process.env.APP_URL ??

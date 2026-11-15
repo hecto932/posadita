@@ -33,11 +33,21 @@ export async function uploadImage(file: File, prefix: string): Promise<string> {
   return path;
 }
 
-export async function removeImages(paths: Array<string | null | undefined>) {
+/** Borra imágenes y lanza si el Storage falla (para reintentar sin perder las rutas). */
+export async function removeImagesOrThrow(paths: Array<string | null | undefined>) {
   const clean = paths.filter((p): p is string => Boolean(p));
   if (!clean.length || !storageEnabled()) return;
   const { error } = await supabase().storage.from(STORAGE_BUCKET).remove(clean);
-  if (error) console.error('[storage] no se pudieron borrar imágenes', error.message);
+  if (error) throw new Error(`No se pudieron borrar imágenes: ${error.message}`);
+}
+
+/** Borra imágenes sin lanzar: solo registra el error. */
+export async function removeImages(paths: Array<string | null | undefined>) {
+  try {
+    await removeImagesOrThrow(paths);
+  } catch (err) {
+    console.error('[storage]', (err as Error).message);
+  }
 }
 
 /** Las fotos solo se ven con enlaces firmados que caducan; el bucket es privado. */

@@ -13,9 +13,11 @@ import { sendMail, type Mail } from './mailer';
 import {
   LOGIN_CODE_TTL_MINUTES,
   claimReminder,
+  getReceiverFor,
   listAssignments,
   logNotification,
   type EventRow,
+  type LoginRecipient,
   type Invitation,
   type Participant,
 } from './service';
@@ -50,8 +52,8 @@ export const notifyOrganizer = (e: EventRow, organizer: Participant | null) =>
 export const notifyRegistered = (e: EventRow, p: Participant) =>
   deliver(e.id, p.id, 'registered', registeredEmail(e, p));
 
-export const notifyLoginCode = (e: EventRow, p: Participant, code: string) =>
-  deliver(e.id, p.id, 'login_code', loginCodeEmail(e, p, code, LOGIN_CODE_TTL_MINUTES));
+export const notifyLoginCode = (e: EventRow, to: LoginRecipient, code: string) =>
+  deliver(e.id, to.participantId, 'login_code', loginCodeEmail(e, to, code, LOGIN_CODE_TTL_MINUTES));
 
 export const notifyInviteCode = (e: EventRow, inv: Invitation, code: string) =>
   deliver(e.id, null, 'invite_code', inviteCodeEmail(e, inv, code, LOGIN_CODE_TTL_MINUTES));
@@ -60,6 +62,17 @@ export const notifyNewLink = (e: EventRow, p: Participant) => deliver(e.id, p.id
 
 export const notifyAdminRecovery = (to: string, events: EventRow[]) =>
   deliver(events[0].id, null, 'admin_recovery', adminRecoveryEmail(to, events));
+
+/**
+ * El organizador le reenvía su acceso a una persona (sin cambiar su enlace).
+ * Si ya hubo sorteo, es el correo del sorteo: el nombre de quien le tocó solo
+ * va al correo del participante, nunca se le muestra al organizador.
+ */
+export async function notifyParticipantAccess(e: EventRow, p: Participant) {
+  const receiver = e.status === 'drawn' ? await getReceiverFor(p.id) : null;
+  const mail = receiver ? drawEmail(e, p, receiver.name) : registeredEmail(e, p);
+  return deliver(e.id, p.id, 'access_resend', mail);
+}
 
 export async function notifyInvitations(e: EventRow, invs: Invitation[]) {
   await inBatches(invs, 3, (inv) => deliver(e.id, null, 'invitation', invitationEmail(e, inv)));

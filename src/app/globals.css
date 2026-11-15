@@ -1,0 +1,209 @@
+@import "tailwindcss";
+
+/*
+ * Sistema Posadita — tokens y utilidades.
+ * Fuente de verdad del diseño: https://claude.ai/artifact/U1rFw7RzcaHNbGE5HrX1hP
+ * Todo par texto/fondo llega a 4.5:1; bordes de controles y foco, a 3:1.
+ */
+@theme {
+  /* Fondos */
+  --color-crema: #fff7ec;
+  --color-crema-2: #fdebd6;
+  --color-superficie: #ffffff;
+  /* Texto y líneas */
+  --color-tinta: #2b1a12;
+  --color-cafe: #6b4f3d; /* antes #8a6a55: no llegaba a 4.5:1 sobre crema-2 */
+  --color-borde: #9c7d66; /* borde de controles: 3.8:1 sobre blanco */
+  --color-linea: #f1dcc4; /* solo decorativo */
+  /* Marca */
+  --color-rosa: #e4007c;
+  --color-rosa-oscuro: #b80064;
+  --color-rosa-suave: #fde4f1;
+  --color-foco: #b80064;
+  /* Colores de fiesta: solo decoración */
+  --color-verde: #00a86b;
+  --color-naranja: #ff7a00;
+  --color-morado: #6b2fd6;
+  --color-amarillo: #ffc400;
+  --color-cielo: #00a3e0;
+  /* Pares para texto sobre fondo tintado */
+  --color-verde-texto: #006b45;
+  --color-verde-suave: #dcf3e8;
+  --color-morado-texto: #5a24bd;
+  --color-morado-suave: #eee6fb;
+  --color-aviso-suave: #ffe9a8;
+  --color-whatsapp: #25d366;
+  --color-whatsapp-texto: #073b1f;
+  --color-whatsapp-enlace: #0b6b3a;
+  --color-peligro: #b42318;
+  --color-peligro-suave: #fdecea;
+
+  --shadow-tarjeta: 0 1px 0 #f1dcc4, 0 14px 32px -20px rgba(120, 60, 20, 0.35);
+  --shadow-boton: 0 4px 0 var(--color-rosa-oscuro);
+
+  --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Figtree Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    /* 18px de base; todo va en rem, así respeta el tamaño de letra del teléfono. */
+    font-size: 112.5%;
+    line-height: 1.55;
+    background: var(--color-crema);
+    color: var(--color-tinta);
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    font-family: var(--font-sans);
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  ::selection {
+    background: var(--color-amarillo);
+  }
+  /* Foco de teclado visible en todo lo interactivo. */
+  :focus-visible {
+    outline: 3px solid var(--color-foco);
+    outline-offset: 3px;
+  }
+  /* Acordeones: mismo indicador «+ / –» en todos. */
+  summary {
+    display: flex;
+    min-height: 3rem;
+    cursor: pointer;
+    list-style: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-radius: 1rem;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary::after {
+    content: "+";
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    font-family: var(--font-sans);
+    font-size: 1.3rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+  details[open] > summary::after {
+    content: "–";
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Contenedores */
+@utility card {
+  @apply rounded-3xl border border-linea bg-superficie p-6 shadow-tarjeta sm:p-8;
+}
+@utility card-title {
+  @apply flex items-center gap-3 font-display text-xl font-bold;
+}
+@utility paso {
+  @apply inline-grid size-9 shrink-0 place-items-center rounded-full bg-tinta font-display text-base font-extrabold text-crema;
+}
+
+/* Formularios */
+@utility label {
+  @apply mb-2 block text-base font-semibold text-tinta;
+}
+@utility opcional {
+  @apply font-normal text-cafe;
+}
+@utility hint {
+  @apply mt-1.5 text-sm text-cafe;
+}
+@utility input {
+  @apply min-h-12 w-full rounded-xl border-2 border-borde bg-superficie px-4 py-2.5 text-base text-tinta outline-none transition placeholder:text-cafe hover:border-tinta focus:border-foco focus:ring-4 focus:ring-rosa-suave aria-invalid:border-peligro;
+}
+@utility checkbox {
+  @apply mt-0.5 size-6 shrink-0 accent-rosa;
+}
+
+/* Botones: píldora de al menos 48px */
+@utility btn {
+  @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-full border-2 border-transparent px-6 py-2 text-center text-base font-bold leading-tight no-underline transition active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0;
+}
+@utility btn-lg {
+  @apply min-h-14 px-8 text-lg;
+}
+@utility btn-primary {
+  @apply btn bg-rosa text-white shadow-boton hover:bg-rosa-oscuro active:shadow-[0_2px_0_var(--color-rosa-oscuro)];
+}
+@utility btn-secondary {
+  @apply btn border-borde bg-superficie text-tinta hover:border-tinta hover:bg-crema;
+}
+@utility btn-whatsapp {
+  @apply btn bg-whatsapp text-whatsapp-texto hover:brightness-105;
+}
+@utility btn-ghost {
+  @apply btn min-h-10 bg-crema-2 px-4 py-1.5 font-semibold text-tinta hover:bg-linea;
+}
+@utility btn-danger {
+  @apply btn border-peligro bg-superficie text-peligro hover:bg-peligro-suave;
+}
+
+/* Enlaces dentro de texto */
+@utility link {
+  @apply rounded font-semibold text-rosa-oscuro underline decoration-2 underline-offset-4 hover:decoration-[3px];
+}
+
+/* Chips: datos cortos y estados (siempre con palabra, no solo color) */
+@utility chip {
+  @apply inline-flex min-h-9 items-center gap-1.5 rounded-full bg-crema-2 px-3.5 py-1 text-sm font-medium text-tinta;
+}
+@utility chip-ok {
+  @apply chip bg-verde-suave font-bold text-verde-texto;
+}
+@utility chip-rosa {
+  @apply chip bg-rosa-suave font-bold text-rosa-oscuro;
+}
+@utility chip-aviso {
+  @apply chip bg-aviso-suave font-semibold text-tinta;
+}
+@utility chip-peligro {
+  @apply chip bg-peligro-suave font-bold text-peligro;
+}
+@utility chip-enlace {
+  @apply chip bg-morado-suave font-semibold text-morado-texto underline underline-offset-2 hover:bg-morado-suave/70;
+}
+
+/* Avisos (mensajes de formularios y de la página) */
+@utility aviso {
+  @apply flex items-start gap-3 rounded-2xl border-2 px-4 py-3 text-base font-medium;
+}
+@utility aviso-exito {
+  @apply aviso border-verde-texto bg-verde-suave text-verde-texto;
+}
+@utility aviso-error {
+  @apply aviso border-peligro bg-peligro-suave text-peligro;
+}
+@utility aviso-info {
+  @apply aviso border-amarillo bg-aviso-suave text-tinta;
+}
+@utility aviso-icono {
+  @apply mt-px grid size-6 shrink-0 place-items-center rounded-full border-2 border-current text-sm leading-none font-extrabold;
+}

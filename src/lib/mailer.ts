@@ -2,7 +2,14 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { APP_NAME } from './config';
 
 export type Mail = { to: string; subject: string; html: string; text: string };
-export type SendResult = { status: 'sent' | 'logged' | 'failed'; error?: string };
+export type MailProvider = 'resend' | 'smtp' | 'console';
+export type SendResult = {
+  status: 'sent' | 'logged' | 'failed';
+  provider: MailProvider;
+  error?: string;
+  /** Respuesta del proveedor (p. ej. "250 2.0.0 OK ... gsmtp"), útil para depurar. */
+  response?: string;
+};
 
 let transporter: Transporter | null = null;
 
@@ -30,24 +37,30 @@ function from() {
  * 3. Consola — para desarrollo local sin credenciales.
  */
 export async function sendMail(mail: Mail): Promise<SendResult> {
+  const provider: MailProvider = process.env.RESEND_API_KEY ? 'resend' : smtp() ? 'smtp' : 'console';
   try {
-    if (process.env.RESEND_API_KEY) {
+    if (provider === 'resend') {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ from: from(), ...mail }),
       });
-      if (!res.ok) return { status: 'failed', error: `Resend ${res.status}: ${await res.text()}` };
-      return { status: 'sent' };
+      const body = await res.text();
+      if (!res.ok) return { status: 'failed', provider, error: `Resend ${res.status}: ${body}` };
+      return { status: 'sent', provider, response: body };
     }
-    const t = smtp();
-    if (t) {
-      await t.sendMail({ from: from(), ...mail });
-      return { status: 'sent' };
+    if (provider === 'smtp') {
+      const info = await smtp()!.sendMail({ from: from(), ...mail });
+      if (info.rejected?.length) {
+        return { status: 'failed', provider, error: `Gmail rechazó el destinatario: ${info.response}` };
+      }
+      return { status: 'sent', provider, response: info.response };
     }
     console.info(`\n[mail:dev] → ${mail.to}\n  ${mail.subject}\n  ${mail.text.replace(/\n/g, '\n  ')}\n`);
-    return { status: 'logged' };
+    return { status: 'logged', provider };
   } catch (err) {
-    return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
+    const e = err as { message?: string; code?: string; responseCode?: number };
+    const detail = [e.code, e.responseCode].filter(Boolean).join(' ');
+    return { status: 'failed', provider, error: `${detail ? `[${detail}] ` : ''}${e.message ?? String(err)}` };
   }
 }

@@ -10,9 +10,19 @@ import {
   type Participant,
 } from './service';
 
+/** "hector@gmail.com" → "hec***@gmail.com": suficiente para depurar sin llenar los logs de correos completos. */
+export function maskEmail(email: string) {
+  const [user, domain] = email.split('@');
+  return `${user.slice(0, 3)}***@${domain ?? '?'}`;
+}
+
 async function deliver(eventId: string, participantId: string | null, kind: string, mail: Mail) {
+  const started = Date.now();
   const r = await sendMail(mail);
-  if (r.status === 'failed') console.error(`[notify] ${kind} → ${mail.to}: ${r.error}`);
+  const line = `[mail] ${kind} → ${maskEmail(mail.to)} | evento ${eventId.slice(0, 8)} | ${r.provider} | ${Date.now() - started} ms`;
+  if (r.status === 'sent') console.info(`${line} | ✅ ENVIADO${r.response ? ` | ${r.response}` : ''}`);
+  else if (r.status === 'logged') console.warn(`${line} | ⚠️ NO ENVIADO: faltan SMTP_USER/SMTP_PASS, solo se imprimió en consola`);
+  else console.error(`${line} | ❌ FALLÓ: ${r.error}`);
   await logNotification({ eventId, participantId, kind, status: r.status, error: r.error ?? null }).catch((e) =>
     console.error('[notify] no se pudo registrar', e),
   );

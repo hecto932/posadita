@@ -582,14 +582,20 @@ export async function issueLoginCode(eventId: string, email: string) {
   return db().begin(async (tx) => {
     const [participant] = await tx<Participant[]>`
       select * from participants where event_id = ${eventId} and email = ${mail} for update`;
-    if (!participant) return null;
+    // Al usuario siempre le respondemos lo mismo; el motivo real solo va a los logs del servidor.
+    const skip = (reason: string) => {
+      console.info(`[login_code] evento ${eventId.slice(0, 8)} | ${mail.slice(0, 3)}***@${mail.split('@')[1]} | NO se emitió código: ${reason}`);
+      return null;
+    };
+    if (!participant) return skip('no es participante (¿aceptó ya su invitación?)');
     const [stats] = await tx<{ recent: number; today: number }[]>`
       select
         count(*) filter (where created_at > now() - make_interval(secs => ${LOGIN_CODE_COOLDOWN_SECONDS}))::int as recent,
         count(*)::int as today
       from login_codes
       where event_id = ${eventId} and email = ${mail} and created_at > now() - interval '1 day'`;
-    if (stats.recent > 0 || stats.today >= LOGIN_CODE_MAX_PER_DAY) return null;
+    if (stats.recent > 0) return skip(`ya pidió uno hace menos de ${LOGIN_CODE_COOLDOWN_SECONDS} s`);
+    if (stats.today >= LOGIN_CODE_MAX_PER_DAY) return skip(`llegó al límite de ${LOGIN_CODE_MAX_PER_DAY} códigos por día`);
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await tx`update login_codes set used_at = now() where event_id = ${eventId} and email = ${mail} and used_at is null`;
     await tx`

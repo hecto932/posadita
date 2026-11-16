@@ -9,7 +9,16 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:db": "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgres://postgres:postgres@localhost:5432/posadita_test} vitest run",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "e2e:up": "supabase start && docker compose -f docker-compose.e2e.yml up -d",
+    "e2e:down": "supabase stop && docker compose -f docker-compose.e2e.yml down",
+    "e2e:images": "tsx e2e/fixtures/download-images.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report",
+    "e2e": "npm run e2e:images && npm run e2e:up && playwright test",
+    "test:all": "npm run lint && npm run typecheck && npm test && npm run e2e"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
@@ -25,6 +34,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^22.20.5",
     "@types/nodemailer": "^8.0.2",
@@ -32,6 +42,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "supabase": "^3.2.0",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^5",

@@ -50,9 +50,41 @@ cp .env.example .env.local   # pon DATABASE_URL=postgres://postgres:postgres@loc
 npm run dev
 ```
 
-Sin `SMTP_*` los correos se imprimen en la consola, lo cual es útil para probar. Sin Supabase todo funciona excepto subir imágenes.
+Si no hay `SMTP_USER`/`SMTP_PASS` en ningún archivo `.env*`, los correos se imprimen en la consola, lo cual es útil para probar. **Ojo:** si tu `.env` tiene las credenciales reales de Gmail, `npm run dev` también las usa y manda correos de verdad. Sin Supabase todo funciona excepto subir imágenes.
 
 Pruebas: `npm test` (sorteo, fechas y teléfonos) y `npm run test:db` (integración contra Postgres; crea antes la BD `posadita_test` y corre `db/schema.sql` en ella).
+
+## Prueba de punta a punta (Playwright)
+
+Recorre todo el flujo en un navegador real: el organizador crea el evento y arma su lista, invita a 20 personas, cada una abre su invitación desde el correo, entra con el código que le llegó y sube 2-3 deseos con foto real, nota y enlace. Después el organizador hace el sorteo y cada quien abre su correo del sorteo y ve la lista (con fotos) de su amigo secreto. Al final se comprueba que hubo exactamente 82 correos, todos `sent`, y que hay 53 fotos en Storage.
+
+Corre contra un stack local aparte, así que no toca tu BD de dev ni manda nada por Gmail:
+
+- **Supabase local** (`supabase/config.toml`): Postgres en `54322`, Storage en `54321` y Studio en http://127.0.0.1:54323 para ver el bucket `wishlist`.
+- **Mailpit** (`docker-compose.e2e.yml`): atrapa todos los correos. Se ven en http://localhost:8026.
+- La app se compila y corre en http://localhost:3100. `playwright.config.ts` le pasa variables que le ganan a `.env`.
+
+Un solo comando para todo:
+
+```bash
+npm run e2e        # baja las fotos si faltan, levanta el stack y corre las 23 pruebas
+npm run e2e -- --headed   # lo mismo, viendo el navegador (cualquier flag va a Playwright)
+npm run test:all   # lint + typecheck + unitarias + e2e
+```
+
+Por partes:
+
+```bash
+npm run e2e:images     # una vez: baja 53 fotos reales a e2e/fixtures/images/
+npm run e2e:up         # supabase start + Mailpit (la primera vez descarga imágenes de Docker)
+npm run test:e2e       # todo en headless (~1 min incluyendo el build)
+npm run test:e2e:ui    # modo UI: ves cada paso, el DOM y el video
+npm run test:e2e:headed
+npm run test:e2e:report  # reporte HTML con video, capturas y trace de cada prueba
+npm run e2e:down
+```
+
+Las etapas son proyectos encadenados: `reset → organizador → participantes (20 en paralelo) → sorteo`. Cada corrida empieza con la BD, el bucket y Mailpit vacíos. Cada invitado manda su propio `x-forwarded-for` para no toparse con el límite de 10 códigos por hora por IP.
 
 ## Desplegar (≈15 min)
 

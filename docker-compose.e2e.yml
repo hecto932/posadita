@@ -1,0 +1,15 @@
+# Bandeja de correo local para las pruebas e2e (npm run e2e:up).
+# La app manda por SMTP a localhost:1026 y nada sale a internet.
+# Ver los correos: http://localhost:8026
+services:
+  mailpit:
+    image: axllent/mailpit
+    container_name: posadita-e2e-mailpit
+    ports:
+      - '1026:1025'
+      - '8026:8025'
+    environment:
+      # La app siempre manda usuario/contraseña SMTP; Mailpit acepta cualquiera sin TLS.
+      MP_SMTP_AUTH_ACCEPT_ANY: '1'
+      MP_SMTP_AUTH_ALLOW_INSECURE: '1'
+      MP_MAX_MESSAGES: '5000'

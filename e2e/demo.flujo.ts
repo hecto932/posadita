@@ -43,7 +43,9 @@ test('demo: crear evento → invitar → aceptar → sorteo', async ({ page: org
   await test.step('1 · el organizador crea el evento', async () => {
     await org.bringToFront();
     await org.goto('/');
-    const form = org.locator('#crear');
+    await spot(org.getByRole('button', { name: 'Organizar mi intercambio' }), 0.5);
+    await org.getByRole('button', { name: 'Organizar mi intercambio' }).click();
+    const form = org.getByRole('dialog', { name: 'Crea tu evento' });
     await spot(form.getByRole('heading', { name: 'Crea tu evento' }));
     await say.org.say('Paso 1 · El organizador crea el evento', EVENT.name);
     await type(form.getByLabel('Nombre del evento'), EVENT.name);

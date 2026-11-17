@@ -13,7 +13,9 @@ setup('el organizador crea el evento, arma su lista e invita a 20 personas', asy
 
   await setup.step('crear el evento desde la página de inicio', async () => {
     await page.goto('/');
-    const form = page.locator('#crear');
+    await page.getByRole('button', { name: 'Organizar mi intercambio' }).click();
+    const form = page.getByRole('dialog', { name: 'Crea tu evento' });
+    await expect(form).toBeVisible();
     await form.getByLabel('Nombre del evento').fill(EVENT.name);
     await form.getByLabel('Monto máximo del regalo').fill(String(EVENT.maxAmountMxn));
     await form.getByLabel('Cupo').fill(String(EVENT.capacity));

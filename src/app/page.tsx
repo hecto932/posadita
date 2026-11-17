@@ -2,6 +2,7 @@ import { createEventAction, recoverAdminAction, requestHomeCodeAction, verifyHom
 import { CodeLogin } from '@/components/CodeLogin';
 import { EventFields } from '@/components/EventBits';
 import { ActionForm, Honeypot, SubmitButton } from '@/components/forms';
+import { Modal, OpenModalButton } from '@/components/Modal';
 
 const STEPS = [
   { emoji: '💌', title: 'Invita por correo', text: 'Escribes los correos y a cada quien le llega su invitación.' },
@@ -20,9 +21,9 @@ export default function Home() {
           Invitaciones por correo, listas de deseos y un sorteo que nadie puede espiar. Gratis.
         </p>
         <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <a href="#crear" className="btn-primary btn-lg">
+          <OpenModalButton target="crear" className="btn-primary btn-lg">
             Organizar mi intercambio
-          </a>
+          </OpenModalButton>
           <a href="#entrar" className="btn-secondary btn-lg">
             Entrar a mi evento
           </a>
@@ -54,9 +55,17 @@ export default function Home() {
         ))}
       </ol>
 
-      <section id="crear" className="card scroll-mt-6">
-        <h2 className="text-2xl font-extrabold">Crea tu evento</h2>
-        <p className="mt-2 mb-6 text-cafe">Tarda un minuto. Te mandamos tu panel de organizador por correo.</p>
+      <section className="card flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-extrabold">¿Te toca organizar?</h2>
+          <p className="mt-1 text-cafe">Crea tu evento en un minuto. Te mandamos tu panel de organizador por correo.</p>
+        </div>
+        <OpenModalButton target="crear" className="btn-primary btn-lg w-full shrink-0 sm:w-auto">
+          Crear evento
+        </OpenModalButton>
+      </section>
+
+      <Modal id="crear" title="Crea tu evento" description="Tarda un minuto. Te mandamos tu panel de organizador por correo.">
         <ActionForm action={createEventAction} className="space-y-6">
           <Honeypot />
           <EventFields />
@@ -94,7 +103,7 @@ export default function Home() {
             Crear evento 🎉
           </SubmitButton>
         </ActionForm>
-      </section>
+      </Modal>
 
       <details className="card py-3 sm:py-4">
         <summary className="font-bold">¿Ya creaste un evento y perdiste tu panel de organizador?</summary>

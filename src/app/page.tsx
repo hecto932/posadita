@@ -11,9 +11,9 @@ const STEPS = [
 
 export default function Home() {
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       <section className="pt-4 text-center sm:pt-8">
-        <h1 className="mx-auto max-w-xl text-4xl leading-[1.05] font-extrabold sm:text-6xl">
+        <h1 className="titulo-portada mx-auto max-w-xl">
           El amigo secreto de tu posada, <span className="text-rosa">sin papelitos.</span>
         </h1>
         <p className="mx-auto mt-4 max-w-lg text-lg text-cafe">
@@ -57,7 +57,7 @@ export default function Home() {
       <section id="crear" className="card scroll-mt-6">
         <h2 className="text-2xl font-extrabold">Crea tu evento</h2>
         <p className="mt-2 mb-6 text-cafe">Tarda un minuto. Te mandamos tu panel de organizador por correo.</p>
-        <ActionForm action={createEventAction} className="space-y-8">
+        <ActionForm action={createEventAction} className="space-y-6">
           <Honeypot />
           <EventFields />
           <fieldset className="space-y-4 rounded-2xl bg-crema/70 p-4 sm:p-5">
@@ -96,7 +96,7 @@ export default function Home() {
         </ActionForm>
       </section>
 
-      <details className="card py-4 sm:py-5">
+      <details className="card py-3 sm:py-4">
         <summary className="font-bold">¿Ya creaste un evento y perdiste tu panel de organizador?</summary>
         <p className="mt-3 text-cafe">Escribe el correo con el que lo creaste y te mandamos el enlace a tu panel.</p>
         <ActionForm action={recoverAdminAction} className="mt-4 pb-2" resetOnSuccess>

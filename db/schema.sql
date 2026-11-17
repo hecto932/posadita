@@ -112,7 +112,7 @@ create table if not exists rate_limits (
   primary key (key, window_start)
 );
 
--- Códigos de 6 dígitos para entrar al evento con el correo. Solo se guarda el hash.
+-- Códigos de 4 dígitos para entrar al evento con el correo. Solo se guarda el hash.
 create table if not exists login_codes (
   id          bigint generated always as identity primary key,
   event_id    uuid not null references events(id) on delete cascade,
@@ -143,7 +143,7 @@ create table if not exists notifications (
   event_id        uuid not null references events(id) on delete cascade,
   participant_id  uuid references participants(id) on delete set null,
   channel         text not null default 'email',
-  kind            text not null,           -- registered | organizer | draw | reminder | invitation | login_code | invite_code | new_link | access_resend | admin_recovery
+  kind            text not null,           -- registered | organizer | draw | reminder | invitation | login_code | invite_code | join_code | new_link | access_resend | admin_recovery
   status          text not null,           -- sent | failed | logged
   error           text,
   created_at      timestamptz not null default now()
@@ -163,3 +163,20 @@ alter table invitations     enable row level security;
 alter table login_codes     enable row level security;
 alter table rate_limits     enable row level security;
 alter table sessions        enable row level security;
+
+-- Enlace genérico para unirse sin invitación directa (/u/[join_token]).
+-- El organizador lo puede desactivar o generar uno nuevo (el anterior deja de servir).
+alter table events add column if not exists join_token text;
+alter table events add column if not exists join_enabled boolean not null default true;
+update events
+  set join_token = replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '')
+  where join_token is null;
+create unique index if not exists events_join_token_key on events(join_token);
+-- Default en la BD: así crear eventos sigue funcionando aunque el código desplegado aún sea el anterior.
+alter table events alter column join_token
+  set default replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+alter table events alter column join_token set not null;
+
+-- 'join' = confirmar el correo al unirse con el enlace genérico.
+alter table login_codes drop constraint if exists login_codes_purpose_check;
+alter table login_codes add constraint login_codes_purpose_check check (purpose in ('login', 'invite', 'join'));

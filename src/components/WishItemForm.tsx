@@ -131,13 +131,13 @@ export function WishItemForm({
         <div className="flex flex-wrap items-center gap-3">
           {preview && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={preview} alt="" className="size-18 rounded-xl border border-linea object-cover" />
+            <img src={preview} alt="" className="size-16 rounded-xl border border-linea object-cover" />
           )}
           <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()}>
             {preview ? 'Cambiar imagen' : 'Subir imagen'}
           </button>
           {item?.imageUrl && (
-            <label className="flex min-h-12 items-center gap-2 text-cafe">
+            <label className="flex min-h-11 items-center gap-2 text-cafe">
               <input type="checkbox" className="size-6 shrink-0 accent-rosa" name="removeImage" onChange={(e) => setPreview(e.target.checked ? null : item.imageUrl)} />
               Quitar imagen
             </label>

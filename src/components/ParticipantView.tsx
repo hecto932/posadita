@@ -56,7 +56,7 @@ export async function ParticipantView({
   const selfMsg = `🎁 Mi enlace personal para "${event.name}" (no lo compartas): ${myUrl}`;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {newLink && (
         <p role="status" className="aviso-info">
           <span aria-hidden className="aviso-icono">
@@ -67,7 +67,7 @@ export async function ParticipantView({
       )}
 
       {welcome && (
-        <section className="rounded-3xl border-2 border-verde-texto bg-verde-suave p-6">
+        <section className="rounded-3xl border-2 border-verde-texto bg-verde-suave p-5">
           <h2 className="text-xl font-bold text-verde-texto">¡Ya estás dentro, {participant.name}! 🎉</h2>
           <p className="mt-1">
             Cuando quieras volver, entra a la página del evento con tu correo. También te mandamos tu enlace personal por correo
@@ -92,17 +92,17 @@ export async function ParticipantView({
           </Link>
         )}
         {onEventPage && <p className="font-semibold text-cafe">{event.name}</p>}
-        <h1 className="mt-2 text-3xl font-extrabold sm:text-4xl">Hola, {participant.name}</h1>
+        <h1 className="titulo-1 mt-2">Hola, {participant.name}</h1>
         <EventFacts event={event} className="mt-3" />
         {onEventPage && event.description && <p className="mt-4 max-w-prose whitespace-pre-line">{event.description}</p>}
       </section>
 
       {receiver ? (
         <section className="space-y-4">
-          <div className="relative overflow-hidden rounded-3xl bg-rosa p-6 text-white shadow-[0_6px_0_var(--color-rosa-oscuro)] sm:p-8">
-            <span aria-hidden className="pointer-events-none absolute -right-8 -bottom-10 size-44 rounded-full border-[2.5rem] border-rosa-oscuro" />
+          <div className="relative overflow-hidden rounded-3xl bg-rosa p-5 text-white shadow-[0_5px_0_var(--color-rosa-oscuro)] sm:p-7">
+            <span aria-hidden className="pointer-events-none absolute -right-6 -bottom-8 size-36 rounded-full border-[2rem] border-rosa-oscuro" />
             <p className="relative text-sm font-bold tracking-[0.08em] uppercase">Tu amigo secreto es…</p>
-            <p className="relative mt-2 font-display text-5xl leading-none font-extrabold break-words sm:text-6xl">{receiver.name}</p>
+            <p className="relative mt-2 font-display text-4xl leading-none font-extrabold break-words sm:text-5xl">{receiver.name}</p>
             <p className="relative mt-4 max-w-[30ch]">🤫 Que no se te escape. Regalo de hasta {formatMXN(event.maxAmountMxn)}.</p>
           </div>
           <h2 className="text-2xl font-extrabold">Lo que le gustaría a {receiver.name}</h2>
@@ -113,7 +113,7 @@ export async function ParticipantView({
               ))}
             </div>
           ) : (
-            <p className="rounded-3xl border-2 border-dashed border-linea p-6 text-cafe">
+            <p className="rounded-3xl border-2 border-dashed border-linea p-5 text-cafe">
               Todavía no agrega nada a su lista. Date una vuelta en unos días 😉
             </p>
           )}

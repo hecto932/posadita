@@ -3,7 +3,7 @@ import { RETENTION_DAYS_AFTER_EVENT, RETENTION_DAYS_NO_DATE } from './config';
 import { db, type Sql } from './db';
 import { drawPairs, DrawError } from './draw';
 import { eventCode as newEventCode, slug as newSlug, token as newToken } from './format';
-import { MIN_PARTICIPANTS } from './config';
+import { CODE_DIGITS, MIN_PARTICIPANTS } from './config';
 
 // ───────────────────────── Tipos ─────────────────────────
 
@@ -13,6 +13,9 @@ export type EventRow = {
   /** Número de evento de 6 dígitos (para entrar desde el inicio). */
   code: number;
   adminToken: string;
+  /** Enlace genérico para unirse sin invitación directa (/u/[joinToken]). */
+  joinToken: string;
+  joinEnabled: boolean;
   name: string;
   description: string | null;
   location: string | null;
@@ -123,7 +126,7 @@ async function insertEvent(input: NewEvent) {
   const { organizerPhone, organizerParticipates, ...fields } = input;
   return db().begin(async (tx) => {
     const [event] = await tx<EventRow[]>`
-      insert into events ${tx({ ...fields, slug: newSlug(), code: newEventCode(), adminToken: newToken() })}
+      insert into events ${tx({ ...fields, slug: newSlug(), code: newEventCode(), adminToken: newToken(), joinToken: newToken() })}
       returning *`;
     let organizer: Participant | null = null;
     if (organizerParticipates) {
@@ -149,6 +152,12 @@ export async function getEventBySlug(slug: string) {
 
 export async function getEventByCode(code: number) {
   const [e] = await db()<EventRow[]>`select * from events where code = ${code}`;
+  return e ?? null;
+}
+
+/** Evento por su enlace para unirse; null si no existe o el organizador lo desactivó. */
+export async function getEventByJoinToken(token: string) {
+  const [e] = await db()<EventRow[]>`select * from events where join_token = ${token} and join_enabled`;
   return e ?? null;
 }
 
@@ -432,6 +441,87 @@ export async function declineInvitation(token: string) {
   return inv;
 }
 
+// ───────────────────────── Unirse con el enlace genérico ─────────────────────────
+
+export type JoinInput = { name: string; email: string; phone: string | null };
+
+async function lockJoinEvent(tx: Sql, joinToken: string) {
+  const [found] = await tx<{ id: string }[]>`select id from events where join_token = ${joinToken} and join_enabled`;
+  if (!found) throw new AppError('NOT_FOUND', 'Este enlace para unirse ya no sirve. Pídele uno nuevo al organizador.');
+  return lockEvent(tx, found.id);
+}
+
+/** Si el organizador canceló la invitación de ese correo, tampoco puede entrar por el enlace genérico. */
+async function assertNotRevoked(tx: Sql, eventId: string, mail: string) {
+  const [revoked] = await tx`
+    select 1 from invitations where event_id = ${eventId} and email = ${mail} and status = 'revoked'`;
+  if (revoked) throw new AppError('INVALID', 'El organizador canceló el acceso de este correo. Si crees que es un error, habla con él.');
+}
+
+/**
+ * Manda (genera) el código para confirmar el correo de quien se une con el
+ * enlace genérico. No distingue si el correo ya participa (así no revela quién
+ * está): al validar el código, quien ya estaba simplemente entra.
+ * `code` es null si ya se pidió uno hace menos de un minuto (ese sigue sirviendo).
+ */
+export async function issueJoinCode(joinToken: string, email: string) {
+  const mail = email.trim().toLowerCase();
+  return db().begin(async (tx) => {
+    const event = await lockJoinEvent(tx, joinToken);
+    const [already] = await tx`select 1 from participants where event_id = ${event.id} and email = ${mail}`;
+    if (!already) {
+      await assertCanJoin(tx, event);
+      await assertNotRevoked(tx, event.id, mail);
+    }
+    const issued = await issueCode(tx, event.id, mail, 'join');
+    if (issued === 'daily') throw new AppError('RATE_LIMITED', 'Ya pediste demasiados códigos hoy. Intenta de nuevo mañana.');
+    return { event, email: mail, code: issued === 'cooldown' ? null : issued };
+  });
+}
+
+/**
+ * Se une al evento con el código que llegó a su correo. Si ese correo ya
+ * participaba, solo entra (`created: false`). Si tenía una invitación
+ * pendiente o rechazada, queda como aceptada. Nunca sortea.
+ */
+export async function joinEvent(joinToken: string, input: JoinInput, code: string) {
+  const mail = input.email.trim().toLowerCase();
+  const [pre] = await db()<{ id: string }[]>`select id from events where join_token = ${joinToken} and join_enabled`;
+  if (!pre) throw new AppError('NOT_FOUND', 'Este enlace para unirse ya no sirve. Pídele uno nuevo al organizador.');
+  if (!(await consumeCode(pre.id, mail, code, 'join')))
+    throw new AppError('CODE_INVALID', 'El código no es correcto o ya venció. Revisa tu correo o pide uno nuevo.');
+
+  return db().begin(async (tx) => {
+    const event = await lockJoinEvent(tx, joinToken);
+    const [existing] = await tx<Participant[]>`
+      select * from participants where event_id = ${event.id} and email = ${mail}`;
+    if (existing) return { participant: existing, event, created: false };
+
+    await assertCanJoin(tx, event);
+    await assertNotRevoked(tx, event.id, mail);
+    const [participant] = await tx<Participant[]>`
+      insert into participants ${tx({ eventId: event.id, name: input.name, email: mail, phone: input.phone, accessToken: newToken() })}
+      returning *`;
+    await tx`
+      update invitations set status = 'accepted', responded_at = now()
+      where event_id = ${event.id} and email = ${mail} and status in ('pending', 'declined')`;
+    return { participant, event, created: true };
+  });
+}
+
+export type JoinLinkMode = 'enable' | 'disable' | 'rotate';
+
+/** El organizador activa, desactiva o cambia el enlace para unirse (el anterior deja de servir). */
+export async function setJoinLink(eventId: string, mode: JoinLinkMode) {
+  const [e] = await db()<EventRow[]>`
+    update events set
+      join_enabled = ${mode !== 'disable'}
+      ${mode === 'rotate' ? db()`, join_token = ${newToken()}` : db()``}
+    where id = ${eventId} returning *`;
+  if (!e) throw new AppError('NOT_FOUND', 'El evento no existe');
+  return e;
+}
+
 export async function leaveEvent(participantId: string) {
   return db().begin(async (tx) => {
     const [p] = await tx<Participant[]>`select * from participants where id = ${participantId}`;
@@ -648,18 +738,19 @@ export async function ping() {
 // ───────────────────────── Acceso con correo + código ─────────────────────────
 
 export const LOGIN_CODE_TTL_MINUTES = 10;
+export { CODE_DIGITS };
 const LOGIN_CODE_COOLDOWN_SECONDS = 60;
 const LOGIN_CODE_MAX_ATTEMPTS = 5;
 /** Tope de códigos por correo y evento en 24 h: limita el gasto de correo y la fuerza bruta. */
 const LOGIN_CODE_MAX_PER_DAY = 8;
 
-type CodePurpose = 'login' | 'invite';
+type CodePurpose = 'login' | 'invite' | 'join';
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const hashCode = (eventId: string, code: string) => sha256(`${eventId}:${code}`);
 
 /**
- * Genera un código de 6 dígitos para ese correo en el evento, respetando la
+ * Genera un código de CODE_DIGITS dígitos para ese correo en el evento, respetando la
  * espera de un minuto (por propósito) y el tope diario (cuenta todos).
  * Invalida los códigos anteriores del mismo propósito.
  */
@@ -672,7 +763,7 @@ async function issueCode(tx: Sql, eventId: string, mail: string, purpose: CodePu
     where event_id = ${eventId} and email = ${mail} and created_at > now() - interval '1 day'`;
   if (stats.recent > 0) return 'cooldown';
   if (stats.today >= LOGIN_CODE_MAX_PER_DAY) return 'daily';
-  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  const code = String(randomInt(0, 10 ** CODE_DIGITS)).padStart(CODE_DIGITS, '0');
   await tx`
     update login_codes set used_at = now()
     where event_id = ${eventId} and email = ${mail} and purpose = ${purpose} and used_at is null`;
@@ -690,7 +781,7 @@ async function issueCode(tx: Sql, eventId: string, mail: string, purpose: CodePu
 async function consumeCode(eventId: string, email: string, code: string, purpose: CodePurpose): Promise<boolean> {
   const mail = email.trim().toLowerCase();
   const clean = code.replace(/\D/g, '');
-  if (clean.length !== 6) return false;
+  if (clean.length !== CODE_DIGITS) return false;
   return db().begin(async (tx) => {
     const [row] = await tx<{ id: string; codeHash: string; attempts: number }[]>`
       select id, code_hash, attempts from login_codes
@@ -717,7 +808,7 @@ async function consumeCode(eventId: string, email: string, code: string, purpose
 export type LoginRecipient = { participantId: string | null; name: string; email: string };
 
 /**
- * Genera un código de 6 dígitos para entrar al evento: para un participante o
+ * Genera un código de CODE_DIGITS dígitos para entrar al evento: para un participante o
  * para el organizador (aunque no participe). Regresa null si el correo no es
  * de ninguno de los dos, si ya se pidió uno hace menos de un minuto (el
  * anterior sigue sirviendo) o si ya se pidieron demasiados hoy. Quien llama no

@@ -16,6 +16,7 @@ import {
   resendInvitationAction,
   resendParticipantAccessAction,
   revokeInvitationAction,
+  setJoinLinkAction,
   updateEventAction,
 } from '@/app/actions';
 import { EventFacts, EventFields, Skeleton, StatusBadge } from '@/components/EventBits';
@@ -45,6 +46,7 @@ const KIND_LABEL: Record<string, string> = {
   invitation: 'Invitaciones',
   login_code: 'Códigos de acceso',
   invite_code: 'Códigos de invitación',
+  join_code: 'Códigos para unirse',
   new_link: 'Enlaces nuevos',
   access_resend: 'Reenvíos de acceso',
   admin_recovery: 'Recuperar panel',
@@ -71,6 +73,7 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
   ]);
 
   const publicUrl = appUrl(`/e/${event.slug}`);
+  const joinUrl = appUrl(`/u/${event.joinToken}`);
   const adminUrl = appUrl(`/admin/${token}`);
   const drawn = event.status === 'drawn';
   const pendingInvites = invitations.filter((i) => i.status === 'pending').length;
@@ -78,8 +81,9 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
     `🎄 ¡Intercambio "${event.name}"!`,
     `Regalo de hasta ${formatMXN(event.maxAmountMxn)}.`,
     event.eventAt ? `📅 ${formatDateTime(event.eventAt, event.timezone)}` : null,
-    `Les mandé una invitación por correo: acéptenla para entrar y armar su lista de deseos.`,
-    `Después pueden entrar con su correo aquí 👉 ${publicUrl}`,
+    `Únanse aquí con su correo para armar su lista de deseos 👉 ${joinUrl}`,
+    `(Si les llegó una invitación por correo, también pueden aceptarla desde ahí.)`,
+    `Después pueden entrar con su correo en ${publicUrl}`,
     `o desde ${appUrl('/')} con el número de evento ${event.code}.`,
   ]
     .filter(Boolean)
@@ -92,7 +96,7 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
   return (
     <div className="space-y-6">
       {sp.nuevo && (
-        <section className="rounded-3xl border-2 border-verde-texto bg-verde-suave p-6">
+        <section className="rounded-3xl border-2 border-verde-texto bg-verde-suave p-5">
           <h2 className="text-xl font-bold text-verde-texto">¡Evento creado! 🎉</h2>
           <p className="mt-1">
             Este es tu <b>panel de organizador</b>. Guárdalo: también te lo mandamos por correo. No lo compartas.
@@ -117,7 +121,7 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
           <StatusBadge event={event} />
           <span className="chip">👑 Panel del organizador</span>
         </div>
-        <h1 className="mt-4 text-3xl font-extrabold sm:text-4xl">{event.name}</h1>
+        <h1 className="titulo-1 mt-4">{event.name}</h1>
         <EventFacts event={event} className="mt-3" />
         <p className="hint mt-3">
           🧹 Para no guardar datos de más, el evento se borra solo a partir del {formatDate(autoDeleteAt(event), event.timezone)}.
@@ -141,7 +145,8 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
             <span className="paso">1</span> Invita al grupo
           </h2>
           <p className="mt-2 text-cafe">
-            A cada correo le llega una invitación. Solo quienes la <b>aceptan</b> entran al evento.
+            Dos formas de sumar gente: invita por correo (a cada quien le llega su invitación) o comparte el <b>enlace para unirse</b> (abajo). En
+            ambos casos cada quien confirma su correo con un código.
           </p>
         </div>
         {drawn ? (
@@ -187,11 +192,47 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
         )}
         <div className="space-y-4 border-t border-linea pt-5">
           <div>
-            <h3 className="font-display text-lg font-bold">Comparte la página del evento</h3>
-            <p className="mt-1 text-cafe">Cada invitado entra con su correo y un código.</p>
+            <h3 className="font-display text-lg font-bold">Enlace para unirse</h3>
+            <p className="mt-1 text-cafe">
+              {event.joinEnabled
+                ? 'Quien tenga este enlace puede unirse sin invitación: pone su nombre y confirma su correo con un código. Compártelo solo con tu grupo.'
+                : 'Está desactivado: solo pueden entrar quienes aceptan una invitación por correo.'}
+            </p>
           </div>
-          <LinkBox url={publicUrl} />
-          <ShareButtons text={inviteMsg} title={event.name} />
+          {event.joinEnabled ? (
+            <>
+              <LinkBox url={joinUrl} />
+              {!drawn && <ShareButtons text={inviteMsg} title={event.name} />}
+              <div className="flex flex-wrap gap-2">
+                <ActionButton
+                  action={setJoinLinkAction.bind(null, token, 'rotate')}
+                  className="btn-ghost"
+                  confirm="El enlace actual dejará de servir y tendrás que compartir el nuevo. Quienes ya se unieron siguen dentro. ¿Continuar?"
+                  pendingText="…"
+                >
+                  Generar enlace nuevo
+                </ActionButton>
+                <ActionButton
+                  action={setJoinLinkAction.bind(null, token, 'disable')}
+                  className="btn-ghost text-peligro"
+                  confirm="Nadie más podrá unirse con este enlace. Quienes ya se unieron siguen dentro. ¿Desactivarlo?"
+                  pendingText="…"
+                >
+                  Desactivar
+                </ActionButton>
+              </div>
+            </>
+          ) : (
+            <ActionButton action={setJoinLinkAction.bind(null, token, 'enable')} pendingText="…">
+              Activar enlace para unirse
+            </ActionButton>
+          )}
+          <p className="hint">
+            Para entrar después (ver su lista o su amigo secreto), cada quien usa la página del evento con su correo:{' '}
+            <Link href={`/e/${event.slug}`} className="underline [overflow-wrap:anywhere]">
+              {publicUrl.replace(/^https?:\/\//, '')}
+            </Link>
+          </p>
         </div>
       </section>
 
@@ -377,16 +418,16 @@ async function AdminContent({ params, searchParams }: Pick<PageProps<'/admin/[to
         </section>
       )}
 
-      <details className="card py-4 sm:py-5">
-        <summary className="font-display text-xl font-bold">Editar detalles del evento</summary>
+      <details className="card py-3 sm:py-4">
+        <summary className="font-display text-lg font-bold">Editar detalles del evento</summary>
         <ActionForm action={updateEventAction.bind(null, token)} className="mt-4 space-y-5 pb-2">
           <EventFields event={event} />
           <SubmitButton pendingText="Guardando…" className="btn-primary w-full sm:w-auto">Guardar cambios</SubmitButton>
         </ActionForm>
       </details>
 
-      <details className="card border-peligro/30 py-4 sm:py-5">
-        <summary className="font-display text-xl font-bold text-peligro">Eliminar evento</summary>
+      <details className="card border-peligro/30 py-3 sm:py-4">
+        <summary className="font-display text-lg font-bold text-peligro">Eliminar evento</summary>
         <ActionForm action={deleteEventAction.bind(null, token)} className="mt-4 space-y-3 pb-2">
           <label htmlFor="confirmName">Se borra todo: participantes, listas, imágenes y el sorteo. No se puede deshacer. Para confirmar, escribe el nombre del evento.</label>
           <input id="confirmName" name="confirmName" className="input" placeholder={`Escribe: ${event.name}`} required />

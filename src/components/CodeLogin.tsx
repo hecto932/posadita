@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import type { ActionState } from '@/app/actions';
+import { CODE_DIGITS } from '@/lib/config';
 import { ActionForm, Honeypot, SubmitButton } from './forms';
 
 type FormAction = (prev: ActionState, fd: FormData) => Promise<ActionState>;
 
 /**
- * Entrar al evento en dos pasos: correo → código de 6 dígitos.
+ * Entrar al evento en dos pasos: correo → código que llega al correo.
  * Con `askEventCode` (desde el inicio) también pide el número de evento.
  */
 export function CodeLogin({
@@ -62,7 +63,7 @@ export function CodeLogin({
               required
               autoComplete="email"
               className="input"
-              placeholder="El correo con el que te invitaron"
+              placeholder="El correo con el que te invitaron o te uniste"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -78,7 +79,7 @@ export function CodeLogin({
   return (
     <div className="space-y-3">
       <p>
-        Si <b>{sentTo}</b> está en {askEventCode ? <>el evento <b>{cleanEventCode}</b></> : 'el evento'}, te llegó un código de 6 dígitos (revisa también
+        Si <b>{sentTo}</b> está en {askEventCode ? <>el evento <b>{cleanEventCode}</b></> : 'el evento'}, te llegó un código de {CODE_DIGITS} dígitos (revisa también
         Spam).
       </p>
       <ActionForm action={verifyCode}>
@@ -94,10 +95,10 @@ export function CodeLogin({
             required
             inputMode="numeric"
             autoComplete="one-time-code"
-            pattern="[0-9 ]{6,7}"
-            maxLength={7}
+            pattern={`[0-9]{${CODE_DIGITS}}`}
+            maxLength={CODE_DIGITS}
             className="input text-center font-display text-2xl tracking-[0.4em] placeholder:tracking-[0.4em]"
-            placeholder="000000"
+            placeholder={'0'.repeat(CODE_DIGITS)}
             autoFocus
           />
           <SubmitButton pendingText="Revisando…" className="btn-primary shrink-0">

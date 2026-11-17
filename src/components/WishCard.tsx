@@ -16,15 +16,15 @@ export function WishCard({ item, maxAmount, children }: { item: WishView; maxAmo
       {item.imageUrl ? (
         <a href={item.imageUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-xl" aria-label={`Ver imagen de ${item.title}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={item.imageUrl} alt="" loading="lazy" className="size-22 rounded-xl object-cover sm:size-26" />
+          <img src={item.imageUrl} alt="" loading="lazy" className="size-22 rounded-xl object-cover sm:size-24" />
         </a>
       ) : (
-        <div className="grid size-22 shrink-0 place-items-center rounded-xl bg-crema-2 text-4xl sm:size-26" aria-hidden>
+        <div className="grid size-22 shrink-0 place-items-center rounded-xl bg-crema-2 text-4xl sm:size-24" aria-hidden>
           🎁
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <h3 className="text-xl leading-tight font-bold break-words">{item.title}</h3>
+        <h3 className="text-lg leading-tight font-bold break-words">{item.title}</h3>
         {item.note && <p className="mt-1 whitespace-pre-line text-cafe">{item.note}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {item.estPriceMxn != null && (

@@ -30,7 +30,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
           </Link>
           <span className="hidden text-sm text-cafe sm:block">{APP_TAGLINE}</span>
         </header>
-        <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-3xl flex-1 px-4 pb-16 outline-none">{children}</main>
+        <main id="contenido" tabIndex={-1} className="mx-auto w-full max-w-3xl flex-1 px-4 pb-12 outline-none">{children}</main>
         <footer className="mx-auto w-full max-w-3xl px-4 pb-8 text-center text-sm text-cafe">
           Hecho con cariño para posadas, intercambios y reuniones · Montos en pesos mexicanos
         </footer>

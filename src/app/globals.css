@@ -47,9 +47,9 @@
 
 @layer base {
   html {
-    /* 18px de base; todo va en rem, así respeta el tamaño de letra del teléfono. */
-    font-size: 112.5%;
-    line-height: 1.55;
+    /* 16px de base (el del teléfono); todo va en rem, así respeta el tamaño de letra que la persona eligió. */
+    font-size: 100%;
+    line-height: 1.5;
     background: var(--color-crema);
     color: var(--color-tinta);
     -webkit-tap-highlight-color: transparent;
@@ -75,7 +75,7 @@
   /* Acordeones: mismo indicador «+ / –» en todos. */
   summary {
     display: flex;
-    min-height: 3rem;
+    min-height: 2.75rem;
     cursor: pointer;
     list-style: none;
     align-items: center;
@@ -91,12 +91,12 @@
     display: grid;
     flex: none;
     place-items: center;
-    width: 2rem;
-    height: 2rem;
+    width: 1.75rem;
+    height: 1.75rem;
     border-radius: 9999px;
     background: color-mix(in srgb, currentColor 10%, transparent);
     font-family: var(--font-sans);
-    font-size: 1.3rem;
+    font-size: 1.2rem;
     font-weight: 600;
     line-height: 1;
   }
@@ -117,18 +117,26 @@
 
 /* Contenedores */
 @utility card {
-  @apply rounded-3xl border border-linea bg-superficie p-5 shadow-tarjeta sm:p-8;
+  @apply rounded-3xl border border-linea bg-superficie p-5 shadow-tarjeta sm:p-7;
 }
 @utility card-title {
-  @apply flex items-center gap-3 font-display text-xl font-bold;
+  @apply flex items-center gap-2.5 font-display text-xl font-bold;
 }
 @utility paso {
-  @apply inline-grid size-9 shrink-0 place-items-center rounded-full bg-tinta font-display text-base font-extrabold text-crema;
+  @apply inline-grid size-8 shrink-0 place-items-center rounded-full bg-tinta font-display text-base font-extrabold text-crema;
+}
+
+/* Títulos de página (portada 32→40px, titulo-1 28→30px) */
+@utility titulo-portada {
+  @apply text-[2rem] leading-[1.05] font-extrabold sm:text-[2.5rem];
+}
+@utility titulo-1 {
+  @apply text-[1.75rem] leading-tight font-extrabold sm:text-3xl;
 }
 
 /* Formularios */
 @utility label {
-  @apply mb-2 block text-base font-semibold text-tinta;
+  @apply mb-1.5 block text-[0.9375rem] font-semibold text-tinta;
 }
 @utility opcional {
   @apply font-normal text-cafe;
@@ -137,18 +145,18 @@
   @apply mt-1.5 text-sm text-cafe;
 }
 @utility input {
-  @apply min-h-12 w-full rounded-xl border-2 border-borde bg-superficie px-4 py-2.5 text-base text-tinta outline-none transition placeholder:text-cafe hover:border-tinta focus:border-foco focus:ring-4 focus:ring-rosa-suave aria-invalid:border-peligro;
+  @apply min-h-11 w-full rounded-xl border-2 border-borde bg-superficie px-3.5 py-2 text-base text-tinta outline-none transition placeholder:text-cafe hover:border-tinta focus:border-foco focus:ring-4 focus:ring-rosa-suave aria-invalid:border-peligro;
 }
 @utility checkbox {
-  @apply mt-0.5 size-6 shrink-0 accent-rosa;
+  @apply mt-0.5 size-5 shrink-0 accent-rosa;
 }
 
-/* Botones: píldora de al menos 48px */
+/* Botones: píldora de al menos 44px (tactil-minimo) */
 @utility btn {
-  @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-full border-2 border-transparent px-6 py-2 text-center text-base font-bold leading-tight no-underline transition active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0;
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full border-2 border-transparent px-5 py-2 text-center text-base font-bold leading-tight no-underline transition active:translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0;
 }
 @utility btn-lg {
-  @apply min-h-14 px-8 text-lg;
+  @apply min-h-12 px-7 text-lg;
 }
 @utility btn-primary {
   @apply btn bg-rosa text-white shadow-boton hover:bg-rosa-oscuro active:shadow-[0_2px_0_var(--color-rosa-oscuro)];
@@ -160,7 +168,7 @@
   @apply btn bg-whatsapp text-whatsapp-texto hover:brightness-105;
 }
 @utility btn-ghost {
-  @apply btn min-h-10 bg-crema-2 px-4 py-1.5 font-semibold text-tinta hover:bg-linea;
+  @apply btn min-h-10 bg-crema-2 px-3.5 py-1.5 text-[0.9375rem] font-semibold text-tinta hover:bg-linea;
 }
 @utility btn-danger {
   @apply btn border-peligro bg-superficie text-peligro hover:bg-peligro-suave;
@@ -178,7 +186,7 @@
 
 /* Chips: datos cortos y estados (siempre con palabra, no solo color) */
 @utility chip {
-  @apply inline-flex min-h-9 items-center gap-1.5 rounded-full bg-crema-2 px-3.5 py-1 text-sm font-medium text-tinta;
+  @apply inline-flex min-h-8 items-center gap-1.5 rounded-full bg-crema-2 px-3 py-1 text-sm font-medium text-tinta;
 }
 @utility chip-ok {
   @apply chip bg-verde-suave font-bold text-verde-texto;
@@ -198,7 +206,7 @@
 
 /* Avisos (mensajes de formularios y de la página) */
 @utility aviso {
-  @apply flex items-start gap-3 rounded-2xl border-2 px-4 py-3 text-base font-medium;
+  @apply flex items-start gap-2.5 rounded-xl border-2 px-3.5 py-2.5 text-[0.9375rem] font-medium;
 }
 @utility aviso-exito {
   @apply aviso border-verde-texto bg-verde-suave text-verde-texto;
@@ -210,5 +218,5 @@
   @apply aviso border-amarillo bg-aviso-suave text-tinta;
 }
 @utility aviso-icono {
-  @apply mt-px grid size-6 shrink-0 place-items-center rounded-full border-2 border-current text-sm leading-none font-extrabold;
+  @apply mt-px grid size-5.5 shrink-0 place-items-center rounded-full border-2 border-current text-xs leading-none font-extrabold;
 }

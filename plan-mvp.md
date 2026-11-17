@@ -15,6 +15,7 @@ Decisión: Resend descartado para v1 — sin dominio verificado solo envía al c
 ## Rutas
 - `/` crear evento (organizador también participa por defecto)
 - `/i/[token]` invitación: aceptar / rechazar
+- `/u/[token]` enlace genérico para unirse sin invitación directa (el organizador lo desactiva o regenera)
 - `/e/[slug]` enlace del evento: entrar con correo + código y ver el contenido
 - `/p/[token]` página secreta del participante: mi lista + mi amigo secreto
 - `/admin/[adminToken]` panel del organizador: invitaciones, participantes, exclusiones, sortear, reabrir, compartir en WhatsApp
@@ -22,9 +23,9 @@ Decisión: Resend descartado para v1 — sin dominio verificado solo envía al c
 
 ## Reglas de negocio
 - Mínimo 3 participantes. Sorteo = ciclo único aleatorio (Fisher–Yates con crypto) respetando exclusiones.
-- Solo por invitación: participante = invitación aceptada. Cupo y fecha límite solo bloquean aceptar.
+- Participante = invitación aceptada o unido con el enlace genérico (ambos confirman el correo con un código). Cupo, fecha límite y sorteo bloquean entrar.
 - El sorteo lo hace únicamente el organizador (nunca automático).
-- Acceso al evento con correo + código de 6 dígitos (10 min, 5 intentos, hash sha256).
+- Acceso al evento con correo + código de 4 dígitos (10 min, 5 intentos, hash sha256).
 - Sorteo atómico: transacción con `select ... for update` del evento.
 - El organizador nunca ve tokens de participantes ni asignaciones.
 - Quitar participante tras sorteo → se re-sortea y se notifica a todos. "Reabrir registro" borra asignaciones.

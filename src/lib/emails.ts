@@ -116,6 +116,18 @@ export function inviteCodeEmail(e: EventRow, inv: Invitation, code: string, minu
   });
 }
 
+/** Código para confirmar el correo al unirse con el enlace genérico del evento. */
+export function joinCodeEmail(e: EventRow, to: string, code: string, minutes: number): Mail {
+  return render(to, `${code} es tu código para unirte a "${e.name}"`, {
+    heading: `Tu código para unirte: ${code}`,
+    lines: [
+      `Escribe este código en la página para unirte a <b>${h(e.name)}</b>. Vale ${minutes} minutos.`,
+      `<span style="font-size:32px;font-weight:bold;letter-spacing:6px">${code}</span>`,
+    ],
+    footer: 'Si tú no lo pediste, ignora este correo: sin este código nadie puede unirse con tu correo.',
+  });
+}
+
 /** Enlace personal nuevo (el anterior ya no sirve). */
 export function newLinkEmail(e: EventRow, p: Participant): Mail {
   return render(p.email, `Tu nuevo enlace para "${e.name}"`, {

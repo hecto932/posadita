@@ -60,9 +60,9 @@ export async function waitForCount(query: string, count: number, timeout = 60_00
   return list;
 }
 
-/** Código de 6 dígitos al inicio del asunto ("123456 es tu código…"). */
+/** Código de 4 dígitos al inicio del asunto ("1234 es tu código…"). */
 export function extractCode(mail: Mail): string {
-  const m = mail.Subject.match(/^(\d{6})\b/) ?? mail.Text.match(/\b(\d{6})\b/);
+  const m = mail.Subject.match(/^(\d{4})\b/);
   if (!m) throw new Error(`Sin código en "${mail.Subject}"`);
   return m[1];
 }

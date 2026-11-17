@@ -40,7 +40,7 @@ async function InvitationContent({ params }: Pick<PageProps<'/i/[token]'>, 'para
     <div className="space-y-6">
       <section className="pt-2">
         <span className="chip-rosa">💌 Invitación</span>
-        <h1 className="mt-3 text-4xl leading-tight font-extrabold sm:text-5xl">{event.name}</h1>
+        <h1 className="titulo-1 mt-3">{event.name}</h1>
         <p className="mt-1 text-cafe">
           {event.organizerName} invitó a <b>{invitation.email}</b>
         </p>

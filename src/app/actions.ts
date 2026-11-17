@@ -12,6 +12,7 @@ import {
   notifyDrawResults,
   notifyInvitations,
   notifyInviteCode,
+  notifyJoinCode,
   notifyLoginCode,
   notifyNewLink,
   notifyOrganizer,
@@ -192,7 +193,7 @@ export async function requestInviteCodeAction(inviteToken: string, _: ActionStat
     const { invitation, event, code } = await svc.issueInviteCode(inviteToken);
     if (!code) return ok(`Ya te mandamos un código a ${invitation.email} hace menos de un minuto. Usa ese (revisa también Spam).`);
     after(() => notifyInviteCode(event, invitation, code));
-    return ok(`Te mandamos un código de 6 dígitos a ${invitation.email}. Revisa también Spam.`);
+    return ok(`Te mandamos un código de ${svc.CODE_DIGITS} dígitos a ${invitation.email}. Revisa también Spam.`);
   } catch (err) {
     return fail(errorMessage(err));
   }
@@ -224,12 +225,49 @@ export async function declineInvitationAction(inviteToken: string): Promise<Acti
   }
 }
 
+// ───────── unirse con el enlace genérico del evento ─────────
+
+/** Paso 1 de unirse: valida nombre/correo/WhatsApp y manda un código a ese correo. */
+export async function requestJoinCodeAction(joinToken: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    if (isBot(fd)) return fail('Algo salió mal. Intenta de nuevo.');
+    const input = personFields.parse(Object.fromEntries(fd));
+    await svc.hitRateLimit(`code:ip:${await clientIp()}`, 10, HOUR);
+    const pre = await svc.getEventByJoinToken(joinToken);
+    if (!pre) throw new svc.AppError('NOT_FOUND', 'Este enlace para unirse ya no sirve. Pídele uno nuevo al organizador.');
+    // Cuida la cuota de correo si el enlace se comparte de más.
+    await svc.hitRateLimit(`join:event:${pre.id}`, 50, HOUR);
+    const { event, email: to, code } = await svc.issueJoinCode(joinToken, input.email);
+    if (!code) return ok(`Ya te mandamos un código a ${to} hace menos de un minuto. Usa ese (revisa también Spam).`);
+    after(() => notifyJoinCode(event, to, code));
+    return ok(`Te mandamos un código de ${svc.CODE_DIGITS} dígitos a ${to}. Revisa también Spam.`);
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
+}
+
+/** Paso 2 de unirse: con el código del correo, entra al evento (o solo inicia sesión si ya estaba). */
+export async function joinEventAction(joinToken: string, _: ActionState, fd: FormData): Promise<ActionState> {
+  let slug: string;
+  try {
+    const input = personFields.parse(Object.fromEntries(fd));
+    await svc.hitRateLimit(`verify:ip:${await clientIp()}`, 30, HOUR);
+    const { participant, event, created } = await svc.joinEvent(joinToken, input, String(fd.get('code') ?? ''));
+    await rememberParticipant(event.slug, participant.id);
+    if (created) after(() => notifyRegistered(event, participant));
+    slug = event.slug;
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
+  redirect(`/e/${slug}?bienvenida=1`);
+}
+
 // ───────── entrar al evento con correo + código ─────────
 // Dos puertas, mismo flujo: la página del evento (/e/[slug]) y el inicio, con
 // número de evento + correo. Quien organiza llega a su panel; quien participa,
 // a su página del evento (con su amigo secreto si ya hubo sorteo).
 
-const LOGIN_CODE_SENT = 'Si ese correo está en el evento, te llegó un código de 6 dígitos. Revisa también Spam.';
+const LOGIN_CODE_SENT = `Si ese correo está en el evento, te llegó un código de ${svc.CODE_DIGITS} dígitos. Revisa también Spam.`;
 
 /** Manda el código si el correo es de alguien del evento. Responde lo mismo exista o no, para no revelar quién está. */
 async function sendLoginCode(event: svc.EventRow | null, rawEmail: FormDataEntryValue | null): Promise<ActionState> {
@@ -476,6 +514,25 @@ export async function revokeInvitationAction(adminToken: string, invitationId: s
     await svc.revokeInvitation(e.id, invitationId);
     refresh();
     return ok('Invitación cancelada');
+  } catch (err) {
+    return fail(errorMessage(err));
+  }
+}
+
+/** Activa, desactiva o cambia el enlace para unirse (el anterior deja de servir). */
+export async function setJoinLinkAction(adminToken: string, mode: svc.JoinLinkMode): Promise<ActionState> {
+  try {
+    const e = await adminEventOrThrow(adminToken);
+    if (!['enable', 'disable', 'rotate'].includes(mode)) return fail('Acción inválida');
+    await svc.setJoinLink(e.id, mode);
+    refresh();
+    return ok(
+      mode === 'disable'
+        ? 'Enlace para unirse desactivado. Nadie más puede unirse con él.'
+        : mode === 'rotate'
+          ? 'Listo: hay un enlace nuevo para unirse y el anterior ya no sirve.'
+          : 'Enlace para unirse activado.',
+    );
   } catch (err) {
     return fail(errorMessage(err));
   }

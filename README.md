@@ -18,17 +18,18 @@ Amigo secreto para posadas e intercambios: **invitaciones por correo**, **un enl
 | Ruta | Quién | Qué hace |
 |---|---|---|
 | `/` | Organizador | Crea el evento (monto, fecha, lugar, cupo, fecha límite). Por defecto también participa. |
-| `/admin/[token]` | Organizador | Invita por correo, ve quién aceptó/rechazó, exclusiones, **decide cuándo sortear**, avisa por WhatsApp. **No ve asignaciones.** |
+| `/admin/[token]` | Organizador | Invita por correo o comparte el enlace para unirse (lo puede desactivar o cambiar), ve quién aceptó/rechazó, exclusiones, **decide cuándo sortear**, avisa por WhatsApp. **No ve asignaciones.** |
 | `/i/[token]` | Invitado | Su invitación: **Aceptar** (pone nombre y WhatsApp y confirma con un **código que llega al correo invitado**) o **Rechazar**. Solo quien acepta entra al evento. |
-| `/e/[slug]` | Participantes | Enlace del evento: entras con **tu correo + un código de 6 dígitos** y ahí mismo ves tu lista, quiénes van y, tras el sorteo, a quién te tocó. Sin sesión solo se ve cuántas personas van, no sus nombres. |
+| `/u/[token]` | Cualquiera con el enlace | Enlace genérico para unirse sin invitación directa: pone nombre, WhatsApp y correo, y confirma con un **código que llega a ese correo**. Si ese correo ya estaba dentro, solo entra. |
+| `/e/[slug]` | Participantes | Enlace del evento: entras con **tu correo + un código de 4 dígitos** y ahí mismo ves tu lista, quiénes van y, tras el sorteo, a quién te tocó. Sin sesión solo se ve cuántas personas van, no sus nombres. |
 | `/p/[token]` | Cada participante | Acceso directo (desde los correos) a la misma vista. Se puede **generar uno nuevo** (el anterior deja de servir y se cierran todas las sesiones); el organizador también puede regenerarlo, y el nuevo solo llega por correo. |
 | `/api/cron/daily` | Vercel | Recordatorio 3 días antes, limpia códigos y límites viejos, mantiene viva la BD. |
 
-**Invitaciones:** solo por invitación; nadie se registra solo. El cupo y la fecha límite únicamente impiden aceptar más invitaciones.
+**Dos formas de entrar:** invitación directa por correo (`/i/[token]`) o el enlace genérico del evento (`/u/[token]`), que el organizador puede desactivar o regenerar. En ambas se confirma el correo con un código. Si el organizador canceló la invitación de un correo, ese correo tampoco puede unirse con el enlace. El cupo, la fecha límite y el sorteo impiden que entre más gente.
 
 **El sorteo** solo ocurre cuando el organizador aprieta el botón (nunca automático). Es un **ciclo único** aleatorio (`crypto.randomInt` + Fisher–Yates): cada quien le regala a exactamente una persona y recibe de exactamente una, nadie se toca a sí mismo. Respeta exclusiones y corre en una transacción con `SELECT … FOR UPDATE` (a prueba de doble clic).
 
-**Código de acceso:** 6 dígitos, vale 10 minutos, máximo 5 intentos, uno nuevo cada 60 s y máximo 8 al día por correo; solo se guarda su hash. La respuesta es la misma exista o no el correo. El mismo mecanismo (con propósito `invite`) confirma el correo al aceptar una invitación, así un correo reenviado no basta para entrar.
+**Código de acceso:** 4 dígitos, vale 10 minutos, máximo 5 intentos, uno nuevo cada 60 s y máximo 8 al día por correo; solo se guarda su hash. La respuesta es la misma exista o no el correo. El mismo mecanismo confirma el correo al aceptar una invitación (propósito `invite`, así un correo reenviado no basta para entrar) y al unirse con el enlace genérico (propósito `join`).
 
 **Sesiones:** la cookie lleva un token de sesión propio (no el enlace personal), dura 60 días y en la BD solo se guarda su hash (`sessions`). "Cerrar sesión" la borra.
 

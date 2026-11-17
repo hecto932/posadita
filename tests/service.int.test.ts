@@ -97,7 +97,7 @@ d('service (Postgres)', async () => {
 
     const { participant } = await accept(uno.token, 'Uno');
     expect(participant.email).toBe('uno@i.com');
-    await expect(svc.acceptInvitation(uno.token, { name: 'Uno', phone: null }, '123456')).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(svc.acceptInvitation(uno.token, { name: 'Uno', phone: null }, '1234')).rejects.toMatchObject({ code: 'INVALID' });
     await expect(svc.issueInviteCode(uno.token)).rejects.toMatchObject({ code: 'INVALID' });
 
     await svc.declineInvitation(dos.token);
@@ -105,9 +105,9 @@ d('service (Postgres)', async () => {
 
     await svc.revokeInvitation(event.id, tres.id);
     await expect(svc.issueInviteCode(tres.token)).rejects.toMatchObject({ code: 'INVALID' });
-    await expect(svc.acceptInvitation(tres.token, { name: 'Tres', phone: null }, '123456')).rejects.toMatchObject({ code: 'INVALID' });
+    await expect(svc.acceptInvitation(tres.token, { name: 'Tres', phone: null }, '1234')).rejects.toMatchObject({ code: 'INVALID' });
     await expect(svc.issueInviteCode('no-existe')).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    await expect(svc.acceptInvitation('no-existe', { name: 'x', phone: null }, '123456')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(svc.acceptInvitation('no-existe', { name: 'x', phone: null }, '1234')).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
     // Quien rechazó puede cambiar de opinión mientras siga abierto.
     await accept(dos.token, 'Dos');
@@ -162,10 +162,10 @@ d('service (Postgres)', async () => {
     expect(await svc.issueLoginCode(event.id, 'nadie@c.com')).toBeNull();
 
     const issued = (await svc.issueLoginCode(event.id, 'LUPE@c.com'))!;
-    expect(issued.code).toMatch(/^\d{6}$/);
+    expect(issued.code).toMatch(/^\d{4}$/);
     expect(await svc.issueLoginCode(event.id, 'lupe@c.com')).toBeNull(); // espera 1 minuto entre códigos
 
-    const wrong = issued.code === '000000' ? '111111' : '000000';
+    const wrong = issued.code === '0000' ? '1111' : '0000';
     await expect(svc.verifyLoginCode(event.id, 'lupe@c.com', wrong)).rejects.toMatchObject({ code: 'CODE_INVALID' });
     expect(issued.to).toMatchObject({ participantId: participant.id, name: 'Lupe' });
     const me = await svc.verifyLoginCode(event.id, 'lupe@c.com', issued.code);
@@ -180,7 +180,7 @@ d('service (Postgres)', async () => {
     // 5 intentos fallidos bloquean el código, aunque luego llegue el correcto
     await db()`delete from login_codes where event_id = ${event.id}`;
     const second = (await svc.issueLoginCode(event.id, 'lupe@c.com'))!;
-    const bad = second.code === '000000' ? '111111' : '000000';
+    const bad = second.code === '0000' ? '1111' : '0000';
     for (let i = 0; i < 5; i++)
       await expect(svc.verifyLoginCode(event.id, 'lupe@c.com', bad)).rejects.toMatchObject({ code: 'CODE_INVALID' });
     await expect(svc.verifyLoginCode(event.id, 'lupe@c.com', second.code)).rejects.toMatchObject({ code: 'CODE_INVALID' });
@@ -222,10 +222,10 @@ d('service (Postgres)', async () => {
 
     // Sin código, o con uno inventado, no entra nadie (p. ej. con el correo reenviado).
     await expect(svc.acceptInvitation(tok, { name: 'Intruso', phone: null }, '')).rejects.toMatchObject({ code: 'CODE_INVALID' });
-    await expect(svc.acceptInvitation(tok, { name: 'Intruso', phone: null }, '123456')).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    await expect(svc.acceptInvitation(tok, { name: 'Intruso', phone: null }, '1234')).rejects.toMatchObject({ code: 'CODE_INVALID' });
 
     const first = await svc.issueInviteCode(tok);
-    expect(first.code).toMatch(/^\d{6}$/);
+    expect(first.code).toMatch(/^\d{4}$/);
     expect(first.invitation.email).toBe('real@r.com');
     expect((await svc.issueInviteCode(tok)).code).toBeNull(); // espera 1 minuto entre códigos
 
@@ -233,7 +233,7 @@ d('service (Postgres)', async () => {
     await expect(svc.verifyLoginCode(event.id, 'real@r.com', first.code!)).rejects.toMatchObject({ code: 'CODE_INVALID' });
 
     // 5 intentos fallidos inutilizan el código
-    const bad = first.code === '000000' ? '111111' : '000000';
+    const bad = first.code === '0000' ? '1111' : '0000';
     for (let i = 0; i < 5; i++)
       await expect(svc.acceptInvitation(tok, { name: 'Intruso', phone: null }, bad)).rejects.toMatchObject({ code: 'CODE_INVALID' });
     await expect(svc.acceptInvitation(tok, { name: 'Real', phone: null }, first.code!)).rejects.toMatchObject({ code: 'CODE_INVALID' });
@@ -242,6 +242,89 @@ d('service (Postgres)', async () => {
     await db()`delete from login_codes where event_id = ${event.id}`;
     const { participant } = await accept(tok, 'Real');
     expect(participant.email).toBe('real@r.com');
+  });
+
+  it('unirse con el enlace genérico del evento', async () => {
+    const { event } = await svc.createEvent({ ...base, name: 'Enlace genérico', capacity: 4, organizerParticipates: false });
+    expect(event.joinEnabled).toBe(true);
+    expect(event.joinToken).toBeTruthy();
+    expect((await svc.getEventByJoinToken(event.joinToken))?.id).toBe(event.id);
+    const tok = event.joinToken;
+
+    /** Se une como lo hace la página: pide el código y lo escribe. */
+    async function joinByLink(token: string, name: string, email: string) {
+      const { code } = await svc.issueJoinCode(token, email);
+      return svc.joinEvent(token, { name, email, phone: null }, code!);
+    }
+
+    // Sin código o con uno incorrecto no entra nadie.
+    const first = await svc.issueJoinCode(tok, 'Nuevo@J.com');
+    expect(first.email).toBe('nuevo@j.com');
+    expect(first.code).toMatch(/^\d{4}$/);
+    expect((await svc.issueJoinCode(tok, 'nuevo@j.com')).code).toBeNull(); // espera 1 minuto entre códigos
+    const bad = first.code === '0000' ? '1111' : '0000';
+    await expect(svc.joinEvent(tok, { name: 'Nuevo', email: 'nuevo@j.com', phone: null }, bad)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    // Un código de 6 dígitos (el formato anterior) no sirve.
+    await expect(svc.joinEvent(tok, { name: 'Nuevo', email: 'nuevo@j.com', phone: null }, `${first.code}00`)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    // El código es para ese correo: otro correo no lo puede usar.
+    await expect(svc.joinEvent(tok, { name: 'Otro', email: 'otro@j.com', phone: null }, first.code!)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+    // Tampoco sirve para entrar (login): cada código tiene su propósito.
+    await expect(svc.verifyLoginCode(event.id, 'nuevo@j.com', first.code!)).rejects.toMatchObject({ code: 'CODE_INVALID' });
+
+    const joined = await svc.joinEvent(tok, { name: 'Nuevo', email: 'NUEVO@j.com', phone: '+526621111111' }, first.code!);
+    expect(joined.created).toBe(true);
+    expect(joined.participant).toMatchObject({ name: 'Nuevo', email: 'nuevo@j.com', phone: '+526621111111', isOrganizer: false });
+    expect(joined.event.slug).toBe(event.slug);
+
+    // Volver a usar el enlace con el mismo correo solo entra: no duplica.
+    await db()`delete from login_codes where event_id = ${event.id}`;
+    const again = await joinByLink(tok, 'Nuevo otra vez', 'nuevo@j.com');
+    expect(again.created).toBe(false);
+    expect(again.participant.id).toBe(joined.participant.id);
+    expect(await svc.countParticipants(event.id)).toBe(1);
+
+    // Con invitación pendiente o rechazada, unirse por el enlace la marca como aceptada.
+    const { invited } = await svc.inviteEmails(event.id, ['inv@j.com', 'rech@j.com', 'cancel@j.com']);
+    const byEmail = Object.fromEntries(invited.map((i) => [i.email, i]));
+    await svc.declineInvitation(byEmail['rech@j.com'].token);
+    await svc.revokeInvitation(event.id, byEmail['cancel@j.com'].id);
+    await joinByLink(tok, 'Inv', 'inv@j.com');
+    await joinByLink(tok, 'Rech', 'rech@j.com');
+    const status = Object.fromEntries((await svc.listInvitations(event.id)).map((i) => [i.email, i.status]));
+    expect(status).toEqual({ 'inv@j.com': 'accepted', 'rech@j.com': 'accepted', 'cancel@j.com': 'revoked' });
+    // Una invitación cancelada por el organizador también bloquea el enlace genérico.
+    await expect(svc.issueJoinCode(tok, 'cancel@j.com')).rejects.toMatchObject({ code: 'INVALID' });
+
+    // Cupo lleno: nadie nuevo, pero quien ya estaba sí puede pedir código y entrar.
+    await joinByLink(tok, 'Cuarta', 'cuarta@j.com');
+    expect(await svc.countParticipants(event.id)).toBe(4);
+    await expect(svc.issueJoinCode(tok, 'quinto@j.com')).rejects.toMatchObject({ code: 'FULL' });
+    await db()`delete from login_codes where event_id = ${event.id}`;
+    expect((await joinByLink(tok, 'Inv', 'inv@j.com')).created).toBe(false);
+
+    // Fecha límite y sorteo.
+    await svc.updateEvent(event.id, { capacity: 10 });
+    await db()`update events set signup_deadline = now() - interval '1 minute' where id = ${event.id}`;
+    await expect(svc.issueJoinCode(tok, 'tarde@j.com')).rejects.toMatchObject({ code: 'DEADLINE' });
+    await svc.updateEvent(event.id, { signupDeadline: null });
+    expect(await svc.performDraw(event.id)).toMatchObject({ drawn: true, count: 4 });
+    await expect(svc.issueJoinCode(tok, 'despues@j.com')).rejects.toMatchObject({ code: 'CLOSED' });
+    await svc.reopenEvent(event.id);
+
+    // Desactivar: el enlace deja de servir; activar lo devuelve igual.
+    await svc.setJoinLink(event.id, 'disable');
+    expect(await svc.getEventByJoinToken(tok)).toBeNull();
+    await expect(svc.issueJoinCode(tok, 'x@j.com')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(svc.joinEvent(tok, { name: 'x', email: 'x@j.com', phone: null }, '1234')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const enabled = await svc.setJoinLink(event.id, 'enable');
+    expect(enabled.joinToken).toBe(tok);
+
+    // Generar uno nuevo: el anterior ya no sirve, el nuevo sí.
+    const rotated = await svc.setJoinLink(event.id, 'rotate');
+    expect(rotated.joinToken).not.toBe(tok);
+    expect(rotated.joinEnabled).toBe(true);
+    await expect(svc.issueJoinCode(tok, 'y@j.com')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect((await joinByLink(rotated.joinToken, 'Y', 'y@j.com')).created).toBe(true);
   });
 
   it('sesiones y enlace personal nuevo', async () => {

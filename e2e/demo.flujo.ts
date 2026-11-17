@@ -123,7 +123,7 @@ test('demo: crear evento → invitar → aceptar → sorteo', async ({ page: org
     await guest.getByRole('button', { name: 'Aceptar invitación 🎁' }).click();
     const codeField = guest.getByLabel(`Código que te llegó a ${person.email}`);
     await expect(codeField).toBeVisible();
-    await say.guest.say(`${who} pidió su código`, 'Le llega un código de 6 dígitos a su correo');
+    await say.guest.say(`${who} pidió su código`, 'Le llega un código de 4 dígitos a su correo');
     await pause(guest, 0.5);
 
     const codeMail = await waitForMail(person.email, 'es tu código para entrar');

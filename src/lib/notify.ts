@@ -3,6 +3,7 @@ import {
   drawEmail,
   invitationEmail,
   inviteCodeEmail,
+  joinCodeEmail,
   loginCodeEmail,
   newLinkEmail,
   organizerEmail,
@@ -57,6 +58,9 @@ export const notifyLoginCode = (e: EventRow, to: LoginRecipient, code: string) =
 
 export const notifyInviteCode = (e: EventRow, inv: Invitation, code: string) =>
   deliver(e.id, null, 'invite_code', inviteCodeEmail(e, inv, code, LOGIN_CODE_TTL_MINUTES));
+
+export const notifyJoinCode = (e: EventRow, email: string, code: string) =>
+  deliver(e.id, null, 'join_code', joinCodeEmail(e, email, code, LOGIN_CODE_TTL_MINUTES));
 
 export const notifyNewLink = (e: EventRow, p: Participant) => deliver(e.id, p.id, 'new_link', newLinkEmail(e, p));
 

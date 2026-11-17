@@ -7,6 +7,8 @@ export const sessionCookie = (slug: string) => `posadita_${slug}`;
 
 export const DEFAULT_TIMEZONE = 'America/Mexico_City';
 export const MIN_PARTICIPANTS = 3;
+/** Dígitos de los códigos que llegan por correo (entrar, aceptar invitación, unirse). */
+export const CODE_DIGITS = 4;
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 export const STORAGE_BUCKET = 'wishlist';
 

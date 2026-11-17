@@ -50,13 +50,13 @@ async function EventContent({ params, searchParams }: Pick<PageProps<'/e/[slug]'
           <span aria-hidden className="aviso-icono">
             i
           </span>
-          <span>Saliste del intercambio. Si cambias de opinión, pídele a {event.organizerName} que te vuelva a invitar.</span>
+          <span>Saliste del intercambio. Si cambias de opinión, pídele a {event.organizerName} que te vuelva a invitar o el enlace para unirte.</span>
         </p>
       )}
 
       <section className="pt-2">
         <StatusBadge event={event} />
-        <h1 className="mt-3 text-4xl leading-tight font-extrabold sm:text-5xl">{event.name}</h1>
+        <h1 className="titulo-1 mt-3">{event.name}</h1>
         <p className="mt-1 text-cafe">Organiza {event.organizerName}</p>
         <EventFacts event={event} className="mt-4" />
       </section>
@@ -64,12 +64,12 @@ async function EventContent({ params, searchParams }: Pick<PageProps<'/e/[slug]'
       <section className="card" id="entrar">
         <h2 className="text-2xl font-extrabold">Entra al evento</h2>
         <p className="mt-2 mb-6 text-cafe">
-          Este intercambio es <b>solo por invitación</b>. Escribe el correo con el que te invitaron y te mandamos un código para ver tu lista y, después del
-          sorteo, a quién te tocó.
+          Escribe el correo con el que te invitaron o te uniste y te mandamos un código para ver tu lista y, después del sorteo, a quién te tocó.
         </p>
         <CodeLogin requestCode={requestCodeAction.bind(null, slug)} verifyCode={verifyCodeAction.bind(null, slug)} />
         <p className="mt-5 text-sm text-cafe">
-          ¿Te invitaron y aún no aceptas? Busca en tu correo el mensaje “te invita a {event.name}” y acéptalo primero.
+          ¿Aún no estás dentro? Si te invitaron, busca en tu correo el mensaje “te invita a {event.name}” y acéptalo primero. Si no, pídele a{' '}
+          {event.organizerName} el enlace para unirte.
         </p>
       </section>
 
@@ -82,7 +82,7 @@ async function EventContent({ params, searchParams }: Pick<PageProps<'/e/[slug]'
           </span>
         </div>
         <p className="mt-2 text-cafe">
-          {count ? 'Entra con tu correo para ver quiénes ya confirmaron.' : 'Todavía nadie ha aceptado su invitación.'}
+          {count ? 'Entra con tu correo para ver quiénes ya confirmaron.' : 'Todavía nadie se ha unido.'}
         </p>
       </section>
     </div>

@@ -2,16 +2,10 @@ import { test as setup, expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { EVENT, ORGANIZER, PEOPLE } from './fixtures/people';
+import { localDateTime } from './helpers/dates';
 import { STATE_FILE, type E2EState } from './helpers/env';
 import { extractLink, waitForCount, waitForMail, getMail } from './helpers/mailpit';
 import { addWishes, expectWishCards, myListSection } from './helpers/wishlist';
-
-/** "YYYY-MM-DDTHH:mm" para un <input type=datetime-local>, `days` días a partir de hoy a las 19:00. */
-function localDateTime(days: number) {
-  const d = new Date(Date.now() + days * 86_400_000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T19:00`;
-}
 
 setup('el organizador crea el evento, arma su lista e invita a 20 personas', async ({ page }) => {
   setup.setTimeout(120_000);

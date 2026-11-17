@@ -72,6 +72,22 @@ npm run e2e -- --headed   # lo mismo, viendo el navegador (cualquier flag va a P
 npm run test:all   # lint + typecheck + unitarias + e2e
 ```
 
+**Demo visual:** abre una ventana de Chromium y recorre todo el flujo en orden, despacio y con un cartel abajo que narra cada paso. Usa tres pestañas: 👑 Organizador, 📬 Correo (Mailpit) e 🙋 Invitado.
+
+1. El organizador crea el evento y arma su lista.
+2. Invita a las 20 personas.
+3. Cada una abre su invitación desde el correo, escribe el código que le llegó y sube sus deseos. Después de cada una, el panel del organizador marca su invitación como ✓ Aceptó.
+4. El organizador hace el sorteo y cada quien abre su correo y ve la lista de su amigo secreto.
+
+Hace las mismas verificaciones que las pruebas normales.
+
+```bash
+npm run e2e:demo                          # las 20 personas (≈10-12 min)
+DEMO_PEOPLE=5 npm run e2e:demo            # versión corta
+DEMO_PAUSE=2500 npm run e2e:demo          # más lento (pausa en ms al resaltar algo)
+DEMO_PAUSE=400 DEMO_TYPE_DELAY=0 npm run e2e:demo   # más rápido
+```
+
 Por partes:
 
 ```bash

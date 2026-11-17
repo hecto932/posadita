@@ -18,7 +18,8 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
     "e2e": "npm run e2e:images && npm run e2e:up && playwright test",
-    "test:all": "npm run lint && npm run typecheck && npm test && npm run e2e"
+    "test:all": "npm run lint && npm run typecheck && npm test && npm run e2e",
+    "e2e:demo": "npm run e2e:images && npm run e2e:up && playwright test -c playwright.demo.config.ts"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
